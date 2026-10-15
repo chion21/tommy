@@ -58,7 +58,7 @@
 - [x] পরিকল্পনা
 - [x] সার্ভারের মূল কাঠামো (auth, লাইসেন্স, ডিভাইস, নাম, ভাষা, মেমোরি, ব্যবহার, অ্যাডমিন) — `server/`
 - [x] Flutter অ্যাপের কাঠামো (থিম, হোম অ্যানিমেশন, সেটিং, লগইন) — `app/` (প্রথম বিল্ড GitHub Actions-এ হবে)
-- [ ] GitHub রিপো (chion21/tommy) — Claude GitHub App ইনস্টল বাকি, তারপর কোড পুশ
+- [x] GitHub রিপো chion21/tommy; প্রতি push-এ APK + TommySetup.exe তৈরি হয়ে Releases → "latest"-এ যায়
 - [x] Gemini API কী তৈরি (এখন ফ্রি টিয়ার, নিজে টেস্টের জন্য; বিক্রির আগে billing চালু)
 - সার্ভার এখন: মালিকের ল্যাপটপে (server/start_server.bat → Cloudflare quick tunnel, ফ্রি, কার্ড লাগে না)। অ্যাপের লগইন স্ক্রিনে/সেটিংসে সার্ভারের ঠিকানা বসানো যায়।
 - বিক্রির আগে: Hetzner/অন্য VPS (setup_server.sh) + ডোমেইন/DuckDNS। Oracle সাইনআপ মোবাইলে কাজ করেনি।
