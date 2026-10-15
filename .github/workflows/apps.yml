@@ -42,3 +42,21 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows_installer\tommy.iss
       - uses: actions/upload-artifact@v4
         with: { name: tommy-windows-setup, path: app/build/installer/TommySetup.exe }
+
+  # Puts the newest APK + Setup.exe on the repo's Releases page (easy to download on a phone).
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Publish "latest" release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          mv dist/app-release.apk dist/Tommy.apk
+          gh release delete latest -R "$GITHUB_REPOSITORY" -y --cleanup-tag || true
+          gh release create latest -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Tommy test build ($(date -u +%Y-%m-%d))" \
+            --notes "Android: Tommy.apk · Windows: TommySetup.exe · build ${GITHUB_SHA::7}" \
+            dist/Tommy.apk dist/TommySetup.exe
