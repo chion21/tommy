@@ -1,0 +1,8 @@
+.env
+*.db
+__pycache__/
+.pytest_cache/
+app/build/
+app/.dart_tool/
+app/.flutter-plugins*
+app/pubspec.lock

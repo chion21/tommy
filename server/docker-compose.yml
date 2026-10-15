@@ -1,0 +1,24 @@
+# One-command server: docker compose up -d   (on the VPS, after creating .env)
+services:
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: tommy
+      POSTGRES_DB: tommy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+  api:
+    build: .
+    restart: always
+    env_file: .env
+    depends_on: [db]
+  caddy:  # free automatic HTTPS for your domain
+    image: caddy:2
+    restart: always
+    ports: ["80:80", "443:443"]
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile, caddy_data:/data]
+    depends_on: [api]
+volumes:
+  pgdata:
+  caddy_data:
