@@ -22,7 +22,7 @@ ADMIN_API_KEY=test uvicorn app.main:app --reload
 ```bash
 git clone <তোমার রিপো> && cd tommy/server
 cp .env.example .env && nano .env      # গোপন মানগুলো বসাও
-nano Caddyfile                          # YOUR-DOMAIN বদলাও
+nano Caddyfile                          # YOUR-NAME.duckdns.org (ফ্রি) বা নিজের ডোমেইন বসাও
 docker compose up -d
 ```
 

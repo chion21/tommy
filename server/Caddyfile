@@ -1,3 +1,5 @@
-api.YOUR-DOMAIN.com {
+# Free start: a DuckDNS name (duckdns.org) works the same as a paid domain, HTTPS included.
+# Replace with your own later, e.g. api.tommyai.com — nothing else changes.
+YOUR-NAME.duckdns.org {
     reverse_proxy api:8000
 }
