@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  API_URL: ${{ vars.API_URL || 'http://10.0.2.2:8000' }}
+  API_URL: ${{ vars.API_URL || '' }}  # empty = user types the server address on the login screen
 
 jobs:
   android:

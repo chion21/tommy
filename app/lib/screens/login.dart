@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _login = TextEditingController();
   final _pass = TextEditingController();
   final _name = TextEditingController();
+  late final _server = TextEditingController(text: widget.app.api.baseUrl);
   bool _register = false, _busy = false;
   String? _error;
 
@@ -26,6 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
+      await app.api.setServer(_server.text);
       if (_register && !replace) await app.api.register(_login.text, _pass.text, _name.text);
       await app.login(_login.text, _pass.text, replace: replace);
     } on ApiError catch (e) {
@@ -66,6 +68,8 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(controller: _login, decoration: InputDecoration(labelText: app.t('phone_or_email')),
                   keyboardType: TextInputType.emailAddress),
               TextField(controller: _pass, decoration: InputDecoration(labelText: app.t('password')), obscureText: true),
+              TextField(controller: _server, decoration: InputDecoration(labelText: app.t('server'),
+                  hintText: 'https://xxxx.trycloudflare.com'), keyboardType: TextInputType.url),
               const SizedBox(height: 16),
               if (_error != null) Text(_error!, style: const TextStyle(color: Colors.redAccent)),
               const SizedBox(height: 8),

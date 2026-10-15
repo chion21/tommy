@@ -142,6 +142,26 @@ class SettingsScreen extends StatelessWidget {
         subtitle: Text(app.t('memory_hint')),
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MemoryScreen(app: app))),
       ),
+      ListTile(
+        leading: const Icon(Icons.dns_outlined),
+        title: Text(app.t('server')),
+        subtitle: Text(app.api.baseUrl),
+        onTap: () async {
+          final ctrl = TextEditingController(text: app.api.baseUrl);
+          final url = await showDialog<String>(
+            context: context,
+            builder: (c) => AlertDialog(
+              title: Text(app.t('server')),
+              content: TextField(controller: ctrl, keyboardType: TextInputType.url),
+              actions: [FilledButton(onPressed: () => Navigator.pop(c, ctrl.text), child: Text(app.t('save')))],
+            ),
+          );
+          if (url != null && url.trim().isNotEmpty) {
+            await app.api.setServer(url);
+            await app.refresh();
+          }
+        },
+      ),
       ListTile(leading: const Icon(Icons.logout), title: Text(app.t('logout')), onTap: app.logout),
     ]);
   }

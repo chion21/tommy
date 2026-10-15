@@ -6,3 +6,7 @@ app/build/
 app/.dart_tool/
 app/.flutter-plugins*
 app/pubspec.lock
+.venv/
+cloudflared
+cloudflared.exe
+server_url.txt

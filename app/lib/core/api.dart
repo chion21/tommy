@@ -7,8 +7,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
-/// Set at build time: flutter build apk --dart-define=API_URL=https://api.your-domain.com
-const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://10.0.2.2:8000');
+/// Default set at build time (--dart-define=API_URL=...). The user can override it on the login
+/// screen — handy while the server runs on a laptop behind a Cloudflare tunnel.
+const defaultApiUrl = String.fromEnvironment('API_URL', defaultValue: '');
 
 class ApiError implements Exception {
   final int status;
@@ -22,6 +23,23 @@ class ApiError implements Exception {
 class Api {
   static const _storage = FlutterSecureStorage();
   String? _token;
+  String baseUrl = defaultApiUrl;
+
+  Future<void> loadServer() async {
+    final prefs = await SharedPreferences.getInstance();
+    baseUrl = prefs.getString('server_url') ?? defaultApiUrl;
+  }
+
+  Future<void> setServer(String url) async {
+    var u = url.trim();
+    if (u.isNotEmpty && !u.startsWith('http')) u = 'https://$u';
+    while (u.endsWith('/')) {
+      u = u.substring(0, u.length - 1);
+    }
+    baseUrl = u;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('server_url', u);
+  }
 
   String get deviceType => (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) ? 'phone' : 'pc';
 
@@ -36,6 +54,7 @@ class Api {
   }
 
   Future<bool> restore() async {
+    await loadServer();
     _token = await _storage.read(key: 'token');
     if (_token == null) return false;
     try {
@@ -98,7 +117,8 @@ class Api {
       _send('POST', '/live/session/$id/end', body: {'used_seconds': usedSeconds});
 
   Future<dynamic> _send(String method, String path, {Object? body, bool auth = true}) async {
-    final uri = Uri.parse('$apiUrl$path');
+    if (baseUrl.isEmpty) throw ApiError(0, 'NO_SERVER', 'Server address not set');
+    final uri = Uri.parse('$baseUrl$path');
     final headers = {
       'Content-Type': 'application/json',
       if (auth && _token != null) 'Authorization': 'Bearer $_token',

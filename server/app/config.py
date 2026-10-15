@@ -3,6 +3,22 @@ import os
 from dataclasses import dataclass, field
 
 
+def _load_dotenv() -> None:
+    """Read server/.env (used when running on a laptop without Docker). Real env vars win."""
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.split(" #")[0].strip())
+
+
+_load_dotenv()
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 

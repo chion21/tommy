@@ -35,6 +35,7 @@ const _strings = <String, Map<String, String>>{
   'plan': {'bn': 'প্ল্যান', 'en': 'Plan', 'hi': 'प्लान'},
   'ai_minutes_left': {'bn': 'AI-মিনিট বাকি: {n}', 'en': 'AI minutes left: {n}', 'hi': 'AI मिनट बाकी: {n}'},
   'replace_device_q': {'bn': 'অন্য একটা ডিভাইস চালু আছে। সেটা সরিয়ে এখানে চালু করবেন?', 'en': 'Another device is active. Remove it and use this one?', 'hi': 'दूसरा डिवाइस चालू है। उसे हटाकर यहाँ चालू करें?'},
+  'server': {'bn': 'সার্ভারের ঠিকানা', 'en': 'Server address', 'hi': 'सर्वर का पता'},
   'yes': {'bn': 'হ্যাঁ', 'en': 'Yes', 'hi': 'हाँ'},
   'no': {'bn': 'না', 'en': 'No', 'hi': 'नहीं'},
   'coming_soon': {'bn': 'শিগগিরই আসছে', 'en': 'Coming soon', 'hi': 'जल्द आ रहा है'},
@@ -53,6 +54,7 @@ const _errors = <String, Map<String, String>>{
   'MEMORY_LIMIT': {'bn': 'মেমোরি পূর্ণ, কিছু মুছুন বা Premium নিন', 'en': 'Memory full — delete some or upgrade', 'hi': 'मेमोरी भर गई'},
   'QUOTA_EXCEEDED': {'bn': 'এই মাসের AI-মিনিট শেষ', 'en': 'AI minutes finished for this month', 'hi': 'इस महीने के AI मिनट खत्म'},
   'PLAN_EXPIRED': {'bn': 'প্ল্যানের মেয়াদ শেষ', 'en': 'Your plan has expired', 'hi': 'प्लान खत्म हो गया'},
+  'NO_SERVER': {'bn': 'সার্ভারের ঠিকানা দিন', 'en': 'Enter the server address', 'hi': 'सर्वर का पता डालें'},
   'NETWORK': {'bn': 'ইন্টারনেট সংযোগ নেই', 'en': 'No internet connection', 'hi': 'इंटरनेट नहीं है'},
 };
 
