@@ -54,6 +54,18 @@
 - চুপ থাকলে API বন্ধ; লোকাল কমান্ড আনলিমিটেড; উত্তর ছোট; বারবারের উত্তর আগে রেকর্ড করা
 - সেশন রিসেট; প্ল্যানে AI-মিনিট ও রিসার্চ লিমিট; লিমিট শেষে টপ-আপ; Google-এ মাসিক খরচ সীমা
 
+
+## আপডেট ১৬ অক্টোবর (অ্যাপ v0.2) — এখন সার্ভার ছাড়াই চলে
+- লগইন: Firebase Authentication (REST, নিজের সার্ভার লাগে না) — ইমেইল/পাসওয়ার্ড, "পাসওয়ার্ড ভুলে গেছেন" (রিসেট ইমেইল), Google লগইন (Android: সিস্টেম অ্যাকাউন্ট পিকার; Windows: ব্রাউজার), আর "অ্যাকাউন্ট ছাড়া চালান" (অফলাইন প্রোফাইল)
+- Firebase/Google মান GitHub Variables-এ: FIREBASE_API_KEY, GOOGLE_WEB_CLIENT_ID, GOOGLE_DESKTOP_CLIENT_ID, GOOGLE_DESKTOP_CLIENT_SECRET (খালি থাকলে শুধু অফলাইন প্রোফাইল চলে)
+- Settings-এ "Google AI Studio API কী" — Google-এ যাচাই হলে তবেই চালু (✅), ভুল কী হলে চালু হয় না; কী থাকে ফোন/PC-র সুরক্ষিত স্টোরেজে, প্রতি ইউজার আলাদা
+- প্রতি ইউজারের আলাদা ফোল্ডার ডিভাইসে: <app data>/users/<uid>/profile.json, memory.json
+- PC বড় স্ক্রিনে (≥৯০০px) বাম পাশে সাইডবার, কনটেন্ট মাঝখানে; ফোনে নিচের বার
+- চরিত্র ১০টা (মেয়ে: Rin, Luna, Mira, Sakura, Aria; ছেলে: Kai, Ren, Haru, Sora, Leo) — রঙের ৬টা থিম আলাদা, আগের মতোই
+- চরিত্রের ছবি: Actions → generate-characters (secret GEMINI_API_KEY লাগে), প্রম্পট app/tool/gen_characters.py
+- Android সাইনিং কী: app/android_signing/tommy-release.p12, পাসওয়ার্ড secret TOMMY_KEYSTORE_PASSWORD; SHA-1 87:FA:83:35:1B:37:E1:52:56:BC:23:04:74:B8:F8:98:9C:BE:92:6D
+- server/ ফোল্ডার রাখা আছে — পরে Premium প্ল্যান (নিজের Gemini কী), লাইসেন্স আর ক্লাউড সিঙ্কের জন্য; মালিক পরে সার্ভার আর ডোমেইন যোগ করবেন
+
 ## কাজের অবস্থা (এটা আপডেট করতে থাকো)
 - [x] পরিকল্পনা
 - [x] সার্ভারের মূল কাঠামো (auth, লাইসেন্স, ডিভাইস, নাম, ভাষা, মেমোরি, ব্যবহার, অ্যাডমিন) — `server/`
