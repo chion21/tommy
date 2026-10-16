@@ -1,17 +1,12 @@
 name: generate-characters
-# Makes the 10 character pictures with Gemini and adds them to the app, then rebuilds the app.
-# Needs the repository secret GEMINI_API_KEY. Run it from Actions → generate-characters → Run workflow.
+# Makes the character pictures (phone + PC) for free, adds them to the app, then rebuilds the app.
+# Runs automatically when the prompt file changes, or by hand: Actions → generate-characters → Run workflow.
 on:
+  push: { paths: ["app/tool/gen_characters.py", ".github/workflows/characters.yml"] }
   workflow_dispatch:
     inputs:
-      force:
-        description: "Re-make pictures that already exist"
-        type: boolean
-        default: false
-      only:
-        description: "Only these ids (e.g. f1 m3), empty = all"
-        required: false
-        default: ""
+      force: { description: "Re-make pictures that already exist", type: boolean, default: false }
+      only: { description: "Only these ids (e.g. f1 m3), empty = all", required: false, default: "" }
 
 permissions:
   contents: write
@@ -20,6 +15,7 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,8 +30,9 @@ jobs:
         run: |
           git config user.name "tommy-bot"
           git config user.email "tommy-bot@users.noreply.github.com"
-          git add app/assets/characters/*.jpg || true
+          git add app/assets/characters/ || true
           if git diff --cached --quiet; then echo "No new pictures"; exit 0; fi
           git commit -m "Add generated character pictures"
+          git pull --rebase origin main
           git push
           gh workflow run build-apps -R "$GITHUB_REPOSITORY" --ref main
