@@ -25,7 +25,8 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python app/tool/gen_characters.py ${{ inputs.force && '--force' || '' }} ${{ inputs.only }}
-      - name: Commit pictures and rebuild the app
+      - name: Commit pictures (and the log) and rebuild the app
+        if: always()
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           git config user.name "tommy-bot"
@@ -35,4 +36,4 @@ jobs:
           git commit -m "Add generated character pictures"
           git pull --rebase origin main
           git push
-          gh workflow run build-apps -R "$GITHUB_REPOSITORY" --ref main
+          if ls app/assets/characters/*_phone.webp >/dev/null 2>&1; then gh workflow run build-apps -R "$GITHUB_REPOSITORY" --ref main; fi

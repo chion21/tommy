@@ -47,7 +47,7 @@ WATERMARK_CROP = 0.07  # the free service stamps a small logo bottom-right; we c
 LOG = []
 
 
-def http_get(url: str, timeout: int = 240) -> bytes:
+def http_get(url: str, timeout: int = 150) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "tommy-character-generator/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
@@ -137,12 +137,13 @@ def make(cid: str) -> str:
     errors, img, src = [], None, ""
     for attempt in range(4):
         try:
-            raw = pollinations(prompt, w, int(h / (1 - WATERMARK_CROP)), SEEDS[cid])
+            raw = pollinations(prompt, 1056, 2016, SEEDS[cid])  # ≤2048 px; after the logo strip is cut → ~9:16
             img, src = finish(raw, w, h, phone_path, crop_bottom=WATERMARK_CROP), "pollinations"
             break
         except Exception as e:  # noqa: BLE001
-            errors.append(f"pollinations#{attempt + 1}: {e}")
-            time.sleep(20 * (attempt + 1))
+            detail = e.read().decode(errors="ignore")[:200] if isinstance(e, urllib.error.HTTPError) else ""
+            errors.append(f"pollinations#{attempt + 1}: {e} {detail}")
+            time.sleep(15 * (attempt + 1))
     if img is None and GEMINI_KEY:
         try:
             img, src = finish(gemini(prompt, "9:16"), w, h, phone_path), "gemini"
