@@ -22,7 +22,7 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 STYLE = ("2D anime key visual, cel shading, crisp clean line art, vibrant colours, highly detailed, "
          "beautiful detailed eyes, cinematic lighting, glowing neon rim light, dark moody background with soft bokeh, "
-         "mature adult aged 25 to 28 with adult facial proportions, tasteful, fully clothed, original character, "
+         "grown-up adult with a mature face, tasteful, fully clothed, original character, "
          "no text, no logo, no watermark, no signature")
 PHONE = ("vertical phone wallpaper, upper-body portrait centred, looking at the viewer, "
          "head in the upper third, dark empty space at the top and bottom of the image")
@@ -30,16 +30,16 @@ PC = ("wide cinematic desktop wallpaper, the character placed on the right third
       "large dark empty area with subtle glow on the left side")
 
 CHARACTERS = {
-    "f1": "Rin, elegant adult woman with long straight black hair and gentle red eyes, black high-collar outfit with red accents, red neon light",
-    "f2": "Luna, graceful adult woman with silver-lavender wavy hair, futuristic purple jacket, holding a softly glowing violet rose, purple city bokeh",
-    "f3": "Mira, confident adult woman with a sleek teal bob, white tech jacket, cyan holographic interface glowing around her, deep blue background",
-    "f4": "Sakura, gentle adult woman with long soft pink hair and a hair clip, cream cardigan, falling cherry blossom petals, warm pink light",
-    "f5": "Aria, confident adult woman with a golden-blonde ponytail, black and gold outfit, warm golden rim light, dark luxurious background",
-    "m1": "Kai, calm adult man with a strong jawline with short dark-blue hair, black techwear jacket, electric blue neon light, rainy night city bokeh",
-    "m2": "Ren, cool adult man with a sharp jawline with messy black hair and red eyes, dark long coat with red details, red neon glow",
-    "m3": "Haru, kind handsome adult man with short brown hair and masculine features, broad shoulders, green hoodie, green neon glow, cozy futuristic room",
-    "m4": "Sora, cheerful adult man with masculine features with light silver hair, white and sky-blue jacket, soft cyan glow, starry night sky",
-    "m5": "Leo, confident adult man with a strong jawline with warm brown hair, orange and black bomber jacket, sunset orange neon glow",
+    "f1": "elegant adult woman with long straight black hair and gentle red eyes, black high-collar outfit with red accents, red neon light",
+    "f2": "graceful adult woman with silver-lavender wavy hair, futuristic purple jacket, holding a softly glowing violet rose, purple city bokeh",
+    "f3": "confident adult woman with a sleek teal bob, white tech jacket, cyan holographic interface glowing around her, deep blue background",
+    "f4": "gentle adult woman with long soft pink hair and a hair clip, cream cardigan, falling cherry blossom petals, warm pink light",
+    "f5": "confident adult woman with a golden-blonde ponytail, black and gold outfit, warm golden rim light, dark luxurious background",
+    "m1": "calm adult man with a strong jawline with short dark-blue hair, black techwear jacket, electric blue neon light, rainy night city bokeh",
+    "m2": "cool adult man with a sharp jawline with messy black hair and red eyes, dark long coat with red details, red neon glow",
+    "m3": "kind handsome adult man with short brown hair and masculine features, broad shoulders, green hoodie, green neon glow, cozy futuristic room",
+    "m4": "cheerful adult man with masculine features with light silver hair, white and sky-blue jacket, soft cyan glow, starry night sky",
+    "m5": "confident adult man with a strong jawline with warm brown hair, orange and black bomber jacket, sunset orange neon glow",
 }
 SEEDS = {cid: 2024 + i * 53 for i, cid in enumerate(CHARACTERS)}
 
@@ -175,7 +175,9 @@ def main() -> None:
         LOG.append(msg)
         time.sleep(8)  # be gentle with the free service
     LOG.append(f"failed: {failed or 'none'}")
-    with open(os.path.join(OUT, "generation_log.txt"), "w") as f:
+    log_dir = os.path.join(OUT, "..", "..", "..", "docs")
+    os.makedirs(log_dir, exist_ok=True)
+    with open(os.path.join(log_dir, "character_generation_log.txt"), "w") as f:
         f.write("\n".join(LOG) + "\n")
     print("failed:", failed or "none")
     sys.exit(1 if failed and len(failed) == len(only or CHARACTERS) else 0)

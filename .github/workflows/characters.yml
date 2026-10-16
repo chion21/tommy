@@ -2,6 +2,7 @@ name: generate-characters
 # Makes the character pictures (phone + PC) for free, adds them to the app, then rebuilds the app.
 # Runs automatically when the prompt file changes, or by hand: Actions → generate-characters → Run workflow.
 on:
+  schedule: [{ cron: "17 */6 * * *" }]  # every 6 hours: makes any pictures still missing (free quota resets)
   push: { paths: ["app/tool/gen_characters.py", ".github/workflows/characters.yml"] }
   workflow_dispatch:
     inputs:
@@ -18,10 +19,19 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Stop if every picture already exists
+        id: check
+        run: |
+          n=$(ls app/assets/characters/*_phone.webp 2>/dev/null | wc -l)
+          echo "have=$n" >> "$GITHUB_OUTPUT"
+          if [ "$n" -ge 10 ] && [ "${{ inputs.force }}" != "true" ]; then echo "All 10 pictures exist"; fi
       - uses: actions/setup-python@v5
+        if: steps.check.outputs.have < 10 || inputs.force
         with: { python-version: "3.12" }
       - run: pip install pillow
+        if: steps.check.outputs.have < 10 || inputs.force
       - name: Generate
+        if: steps.check.outputs.have < 10 || inputs.force
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python app/tool/gen_characters.py ${{ inputs.force && '--force' || '' }} ${{ inputs.only }}
@@ -31,7 +41,7 @@ jobs:
         run: |
           git config user.name "tommy-bot"
           git config user.email "tommy-bot@users.noreply.github.com"
-          git add app/assets/characters/ || true
+          git add app/assets/characters/ docs/character_generation_log.txt || true
           if git diff --cached --quiet; then echo "No new pictures"; exit 0; fi
           git commit -m "Add generated character pictures"
           git pull --rebase origin main
