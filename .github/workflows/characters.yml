@@ -1,9 +1,10 @@
 name: generate-characters
-# Makes the character pictures (phone + PC) for free, adds them to the app, then rebuilds the app.
-# Runs automatically when the prompt file changes, or by hand: Actions → generate-characters → Run workflow.
+# Makes the character pictures for free (Pollinations), sharpens them with AI (Real-ESRGAN),
+# builds the PC versions, adds them to the app, and rebuilds the app.
+# Runs every 6 hours until all 10 are done, when the scripts change, or by hand (Actions → Run workflow).
 on:
-  schedule: [{ cron: "17 */6 * * *" }]  # every 6 hours: makes any pictures still missing (free quota resets)
-  push: { paths: ["app/tool/gen_characters.py", ".github/workflows/characters.yml"] }
+  schedule: [{ cron: "17 */6 * * *" }]
+  push: { paths: ["app/tool/gen_characters.py", "app/tool/upscale.py", ".github/workflows/characters.yml"] }
   workflow_dispatch:
     inputs:
       force: { description: "Re-make pictures that already exist", type: boolean, default: false }
@@ -16,34 +17,45 @@ permissions:
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Stop if every picture already exists
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pillow numpy
+      - name: Anything to do?
         id: check
         run: |
-          n=$(ls app/assets/characters/*_phone.webp 2>/dev/null | wc -l)
-          echo "have=$n" >> "$GITHUB_OUTPUT"
-          if [ "$n" -ge 10 ] && [ "${{ inputs.force }}" != "true" ]; then echo "All 10 pictures exist"; fi
-      - uses: actions/setup-python@v5
-        if: steps.check.outputs.have < 10 || inputs.force
-        with: { python-version: "3.12" }
-      - run: pip install pillow
-        if: steps.check.outputs.have < 10 || inputs.force
-      - name: Generate
-        if: steps.check.outputs.have < 10 || inputs.force
+          python - <<'PY'
+          import glob, os
+          from PIL import Image
+          phones = glob.glob('app/assets/characters/*_phone.webp')
+          sharp = [f for f in phones if Image.open(f).width >= 1440]
+          todo = len(phones) < 10 or len(sharp) < len(phones)
+          print(f"pictures: {len(phones)}/10, sharp: {len(sharp)}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"todo={'yes' if todo else 'no'}\n")
+          PY
+      - name: Generate missing pictures
+        if: steps.check.outputs.todo == 'yes' || inputs.force
+        continue-on-error: true
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python app/tool/gen_characters.py ${{ inputs.force && '--force' || '' }} ${{ inputs.only }}
+      - name: Sharpen with AI and build PC pictures
+        if: steps.check.outputs.todo == 'yes' || inputs.force
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python app/tool/upscale.py ${{ inputs.force && '--force' || '' }}
       - name: Commit pictures (and the log) and rebuild the app
-        if: always()
+        if: always() && (steps.check.outputs.todo == 'yes' || inputs.force)
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           git config user.name "tommy-bot"
           git config user.email "tommy-bot@users.noreply.github.com"
           git add app/assets/characters/ docs/character_generation_log.txt || true
-          if git diff --cached --quiet; then echo "No new pictures"; exit 0; fi
-          git commit -m "Add generated character pictures"
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Character pictures: generated / sharpened"
           git pull --rebase origin main
           git push
-          if ls app/assets/characters/*_phone.webp >/dev/null 2>&1; then gh workflow run build-apps -R "$GITHUB_REPOSITORY" --ref main; fi
+          gh workflow run build-apps -R "$GITHUB_REPOSITORY" --ref main

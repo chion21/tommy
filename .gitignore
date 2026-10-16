@@ -10,3 +10,4 @@ app/pubspec.lock
 cloudflared
 cloudflared.exe
 server_url.txt
+app/tool/.cache/

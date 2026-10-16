@@ -81,7 +81,7 @@ def gemini(prompt: str, aspect: str) -> bytes:
     raise RuntimeError("Gemini returned no image")
 
 
-def finish(raw: bytes, w: int, h: int, path: str, crop_bottom: float = 0.0) -> Image.Image:
+def finish(raw: bytes, w: int, h: int, path: str, crop_bottom: float = 0.0, resize: bool = True) -> Image.Image:
     img = Image.open(io.BytesIO(raw)).convert("RGB")
     LOG.append(f"{os.path.basename(path)} original {img.size}")
     if img.width < 400 or img.height < 400:
@@ -96,7 +96,7 @@ def finish(raw: bytes, w: int, h: int, path: str, crop_bottom: float = 0.0) -> I
     else:
         nh = int(img.width / target)
         img = img.crop((0, (img.height - nh) // 2, img.width, (img.height - nh) // 2 + nh))
-    if img.size != (w, h):
+    if resize and img.size != (w, h):
         img = img.resize((w, h), Image.LANCZOS)
         img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
     img.save(path, "WEBP", quality=90, method=6)
@@ -138,12 +138,13 @@ def make(cid: str) -> str:
     for attempt in range(4):
         try:
             raw = pollinations(prompt, 1056, 2016, SEEDS[cid])  # ≤2048 px; after the logo strip is cut → ~9:16
-            img, src = finish(raw, w, h, phone_path, crop_bottom=WATERMARK_CROP), "pollinations"
+            # keep the real size; tool/upscale.py sharpens it with AI afterwards
+            img, src = finish(raw, w, h, phone_path, crop_bottom=WATERMARK_CROP, resize=False), "pollinations"
             break
         except Exception as e:  # noqa: BLE001
             detail = e.read().decode(errors="ignore")[:200] if isinstance(e, urllib.error.HTTPError) else ""
             errors.append(f"pollinations#{attempt + 1}: {e} {detail}")
-            time.sleep(15 * (attempt + 1))
+            time.sleep(50 * (attempt + 1))  # free limit: 1 picture per 45 s
     if img is None and GEMINI_KEY:
         try:
             img, src = finish(gemini(prompt, "9:16"), w, h, phone_path), "gemini"
@@ -151,8 +152,7 @@ def make(cid: str) -> str:
             errors.append(f"gemini: {e}")
     if img is None:
         raise RuntimeError("; ".join(errors))
-    make_pc(img, os.path.join(OUT, f"{cid}_pc.webp"))
-    return f"{src}, phone {os.path.getsize(phone_path) // 1024} KB"
+    return f"{src}, phone {img.size}"
 
 
 def main() -> None:
@@ -173,7 +173,7 @@ def main() -> None:
             failed.append(cid)
         print(msg, flush=True)
         LOG.append(msg)
-        time.sleep(8)  # be gentle with the free service
+        time.sleep(50)  # free service: max 1 picture per 45 seconds
     LOG.append(f"failed: {failed or 'none'}")
     log_dir = os.path.join(OUT, "..", "..", "..", "docs")
     os.makedirs(log_dir, exist_ok=True)
