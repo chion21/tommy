@@ -62,7 +62,8 @@
 - প্রতি ইউজারের আলাদা ফোল্ডার ডিভাইসে: <app data>/users/<uid>/profile.json, memory.json
 - PC বড় স্ক্রিনে (≥৯০০px) বাম পাশে সাইডবার, কনটেন্ট মাঝখানে; ফোনে নিচের বার
 - চরিত্র ১০টা (মেয়ে: Rin, Luna, Mira, Sakura, Aria; ছেলে: Kai, Ren, Haru, Sora, Leo) — রঙের ৬টা থিম আলাদা, আগের মতোই
-- চরিত্রের ছবি: Actions → generate-characters (secret GEMINI_API_KEY লাগে), প্রম্পট app/tool/gen_characters.py
+- চরিত্রের ছবি ✅ ১০টা তৈরি: ফ্রি Pollinations (আসল সাইজ ~555×1061) → Real-ESRGAN anime AI দিয়ে শার্প → ফোন 1440×2560, PC 2560×1440 (PC ছবি ফোন ছবি থেকে বানানো, তাই একই চেহারা)। workflow: generate-characters (৬ ঘণ্টা পর পর বাকি থাকলে বানায়); প্রম্পট app/tool/gen_characters.py, শার্প করা app/tool/upscale.py; Settings → চরিত্র = আলাদা পাতা
+- ⏸ Google লগইন HOLD — মালিক সব ফিচার টেস্ট করার পর চালু করবেন; তখন মনে করিয়ে দিতে হবে (Firebase সেটআপ ধাপ CONVERSATION_LOG-এ)
 - Android সাইনিং কী: app/android_signing/tommy-release.p12, পাসওয়ার্ড secret TOMMY_KEYSTORE_PASSWORD; SHA-1 87:FA:83:35:1B:37:E1:52:56:BC:23:04:74:B8:F8:98:9C:BE:92:6D
 - server/ ফোল্ডার রাখা আছে — পরে Premium প্ল্যান (নিজের Gemini কী), লাইসেন্স আর ক্লাউড সিঙ্কের জন্য; মালিক পরে সার্ভার আর ডোমেইন যোগ করবেন
 
