@@ -42,12 +42,6 @@ class _ShellState extends State<Shell> {
   @override
   Widget build(BuildContext context) {
     final app = widget.app;
-    final pages = [
-      _Home(app: app),
-      _Placeholder(text: app.t('coming_soon'), icon: Icons.chat_bubble_outline),
-      _Placeholder(text: app.t('coming_soon'), icon: Icons.bolt),
-      SettingsScreen(app: app),
-    ];
     final items = [
       (Icons.home_rounded, 'home', 0),
       (Icons.chat_bubble_outline, 'chat', 1),
@@ -57,6 +51,12 @@ class _ShellState extends State<Shell> {
 
     return LayoutBuilder(builder: (context, box) {
       final wide = box.maxWidth >= 900;
+      final pages = [
+        _Home(app: app, wide: box.maxWidth > box.maxHeight),
+        _Placeholder(text: app.t('coming_soon'), icon: Icons.chat_bubble_outline),
+        _Placeholder(text: app.t('coming_soon'), icon: Icons.bolt),
+        SettingsScreen(app: app),
+      ];
       final body = EdgeGlow(colors: app.theme.glow, state: app.voice, child: pages[_tab]);
       if (wide) {
         return Scaffold(
@@ -79,7 +79,8 @@ class _ShellState extends State<Shell> {
 
 class _Home extends StatelessWidget {
   final AppState app;
-  const _Home({required this.app});
+  final bool wide; // landscape window → PC picture
+  const _Home({required this.app, required this.wide});
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +94,8 @@ class _Home extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: Stack(fit: StackFit.expand, children: [
-        CharacterArt(c: app.character, showInitial: false),
+        CharacterArt(c: app.character, wide: wide, showInitial: false,
+            alignment: wide ? Alignment.centerRight : Alignment.topCenter),
         DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(
           begin: Alignment.topCenter, end: Alignment.bottomCenter,
           colors: [th.background.withValues(alpha: 0.80), Colors.transparent, th.background.withValues(alpha: 0.90)],

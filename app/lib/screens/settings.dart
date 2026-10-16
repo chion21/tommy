@@ -5,6 +5,7 @@ import '../core/app_state.dart';
 import '../core/gemini.dart';
 import '../core/themes.dart';
 import '../widgets/character_art.dart';
+import 'characters.dart';
 import 'memory.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -18,7 +19,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _keyCtrl = TextEditingController();
   bool _checking = false;
-  bool _girls = true;
 
   AppState get app => widget.app;
 
@@ -67,7 +67,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final p = app.profile;
     final primary = app.theme.primary;
     const langNames = {'bn': 'বাংলা', 'en': 'English', 'hi': 'हिन्दी'};
-    final shown = characters.where((c) => c.female == _girls).toList();
 
     return Center(
       child: ConstrainedBox(
@@ -153,44 +152,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
 
-          // ---------- character ----------
+          // ---------- character (own page) ----------
           _section(app.t('character'), [
-            SegmentedButton<bool>(
-              segments: [
-                ButtonSegment(value: true, label: Text(app.t('girls'))),
-                ButtonSegment(value: false, label: Text(app.t('boys'))),
-              ],
-              selected: {_girls},
-              onSelectionChanged: (s) => setState(() => _girls = s.first),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 150,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: shown.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (_, i) {
-                  final c = shown[i];
-                  final sel = p['character'] == c.id;
-                  return GestureDetector(
-                    onTap: () => app.setPref('character', c.id),
-                    child: Column(children: [
-                      Container(
-                        width: 84,
-                        height: 120,
-                        clipBehavior: Clip.antiAlias,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: sel ? primary : Colors.white24, width: sel ? 3 : 1),
-                        ),
-                        child: CharacterArt(c: c),
-                      ),
+            InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CharactersScreen(app: app))),
+              child: Container(
+                height: 140,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: primary)),
+                child: Row(children: [
+                  SizedBox(width: 80, child: CharacterArt(c: app.character)),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(app.character.label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 4),
-                      Text(c.label, style: TextStyle(fontSize: 12, color: sel ? primary : null)),
+                      Text(app.t('choose_character'), style: const TextStyle(color: Colors.white70)),
                     ]),
-                  );
-                },
+                  ),
+                  const Icon(Icons.chevron_right),
+                  const SizedBox(width: 8),
+                ]),
               ),
             ),
           ]),

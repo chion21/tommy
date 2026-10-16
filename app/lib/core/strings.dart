@@ -43,6 +43,8 @@ const _s = <String, Map<String, String>>{
   'assistant_name': {'bn': 'অ্যাসিস্ট্যান্টের নাম', 'en': 'Assistant name', 'hi': 'असिस्टेंट का नाम'},
   'renames_left': {'bn': 'আর {n} বার নাম বদলাতে পারবেন', 'en': '{n} name changes left', 'hi': '{n} बार नाम बदल सकते हैं'},
   'character': {'bn': 'চরিত্র', 'en': 'Character', 'hi': 'किरदार'},
+  'use_character': {'bn': 'এই চরিত্রটা নিন', 'en': 'Use this character', 'hi': 'यह किरदार चुनें'},
+  'choose_character': {'bn': 'চরিত্র বদলাতে চাপুন', 'en': 'Tap to change character', 'hi': 'किरदार बदलने के लिए टैप करें'},
   'girls': {'bn': 'মেয়ে', 'en': 'Girls', 'hi': 'लड़कियाँ'},
   'boys': {'bn': 'ছেলে', 'en': 'Boys', 'hi': 'लड़के'},
   'theme': {'bn': 'রঙের থিম', 'en': 'Colour theme', 'hi': 'रंग थीम'},

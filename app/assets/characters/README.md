@@ -1,3 +1,3 @@
-Put one portrait image per theme here (PNG/JPG/WebP, ~1080x1920, adult anime-style character, your own/licensed art):
-crimson.jpg  violet.jpg  aqua.jpg  sakura.jpg  gold.jpg  emerald.jpg
-Until they exist the app shows a gradient instead.
+Character pictures, made automatically by the GitHub workflow "generate-characters" (free, no key needed).
+<id>_phone.webp = 1080x1920 for phones, <id>_pc.webp = 1920x1080 for PC full screen.
+To change a look: edit the prompt in app/tool/gen_characters.py, push, and run the workflow with "force".
