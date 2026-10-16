@@ -1,5 +1,6 @@
 """Make the character pictures: for every character one PHONE picture (portrait 1080x1920) and one
 PC picture (landscape 1920x1080). Saved as app/assets/characters/<id>_phone.webp and <id>_pc.webp.
+The PC picture is built from the phone picture (same face): character on the right, blurred glow on the left.
 
 Free by default: uses Pollinations (FLUX model, no account or key). If that fails and GEMINI_API_KEY
 is set, falls back to Gemini image generation.
@@ -14,35 +15,36 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "characters")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-STYLE = ("masterpiece, best quality, highly detailed modern anime illustration, sharp clean line art, "
+STYLE = ("2D anime key visual, cel shading, crisp clean line art, vibrant colours, highly detailed, "
          "beautiful detailed eyes, cinematic lighting, glowing neon rim light, dark moody background with soft bokeh, "
-         "the character is clearly an adult in their mid-20s, tasteful, fully clothed, original character, "
+         "mature adult aged 25 to 28 with adult facial proportions, tasteful, fully clothed, original character, "
          "no text, no logo, no watermark, no signature")
 PHONE = ("vertical phone wallpaper, upper-body portrait centred, looking at the viewer, "
-         "dark empty space at the top and bottom of the image")
+         "head in the upper third, dark empty space at the top and bottom of the image")
 PC = ("wide cinematic desktop wallpaper, the character placed on the right third of the frame, upper body, "
       "large dark empty area with subtle glow on the left side")
 
 CHARACTERS = {
-    "f1": "Rin, elegant woman with long straight black hair and gentle red eyes, black high-collar outfit with red accents, red neon light",
-    "f2": "Luna, calm woman with silver-lavender wavy hair, futuristic purple jacket, holding a softly glowing violet rose, purple city bokeh",
-    "f3": "Mira, friendly woman with a short teal bob, white tech jacket, cyan holographic interface glowing around her, deep blue background",
-    "f4": "Sakura, warm woman with long soft pink hair and a hair clip, cream cardigan, falling cherry blossom petals, warm pink light",
-    "f5": "Aria, confident woman with a golden-blonde ponytail, black and gold outfit, warm golden rim light, dark luxurious background",
-    "m1": "Kai, calm man with short dark-blue hair, black techwear jacket, electric blue neon light, rainy night city bokeh",
-    "m2": "Ren, cool man with messy black hair and red eyes, dark long coat with red details, red neon glow",
-    "m3": "Haru, kind man with brown wavy hair, green hoodie, green neon glow, cozy futuristic room",
-    "m4": "Sora, cheerful man with light silver hair, white and sky-blue jacket, soft cyan glow, starry night sky",
-    "m5": "Leo, confident man with warm brown hair, orange and black bomber jacket, sunset orange neon glow",
+    "f1": "Rin, elegant adult woman with long straight black hair and gentle red eyes, black high-collar outfit with red accents, red neon light",
+    "f2": "Luna, graceful adult woman with silver-lavender wavy hair, futuristic purple jacket, holding a softly glowing violet rose, purple city bokeh",
+    "f3": "Mira, confident adult woman with a sleek teal bob, white tech jacket, cyan holographic interface glowing around her, deep blue background",
+    "f4": "Sakura, gentle adult woman with long soft pink hair and a hair clip, cream cardigan, falling cherry blossom petals, warm pink light",
+    "f5": "Aria, confident adult woman with a golden-blonde ponytail, black and gold outfit, warm golden rim light, dark luxurious background",
+    "m1": "Kai, calm adult man with a strong jawline with short dark-blue hair, black techwear jacket, electric blue neon light, rainy night city bokeh",
+    "m2": "Ren, cool adult man with a sharp jawline with messy black hair and red eyes, dark long coat with red details, red neon glow",
+    "m3": "Haru, kind handsome adult man with short brown hair and masculine features, broad shoulders, green hoodie, green neon glow, cozy futuristic room",
+    "m4": "Sora, cheerful adult man with masculine features with light silver hair, white and sky-blue jacket, soft cyan glow, starry night sky",
+    "m5": "Leo, confident adult man with a strong jawline with warm brown hair, orange and black bomber jacket, sunset orange neon glow",
 }
-SEEDS = {cid: 1000 + i * 37 for i, cid in enumerate(CHARACTERS)}  # same seed for both shapes → similar look
+SEEDS = {cid: 2024 + i * 53 for i, cid in enumerate(CHARACTERS)}
 
-SHAPES = {"phone": (1080, 1920, PHONE, "9:16"), "pc": (1920, 1080, PC, "16:9")}
+WATERMARK_CROP = 0.07  # the free service stamps a small logo bottom-right; we cut that strip off
+LOG = []
 
 
 def http_get(url: str, timeout: int = 240) -> bytes:
@@ -79,10 +81,13 @@ def gemini(prompt: str, aspect: str) -> bytes:
     raise RuntimeError("Gemini returned no image")
 
 
-def finish(raw: bytes, w: int, h: int, path: str) -> None:
+def finish(raw: bytes, w: int, h: int, path: str, crop_bottom: float = 0.0) -> Image.Image:
     img = Image.open(io.BytesIO(raw)).convert("RGB")
+    LOG.append(f"{os.path.basename(path)} original {img.size}")
     if img.width < 400 or img.height < 400:
         raise RuntimeError(f"image too small {img.size}")
+    if crop_bottom:
+        img = img.crop((0, 0, img.width, int(img.height * (1 - crop_bottom))))
     # cover-crop to the exact shape, then scale to the target size
     target = w / h
     if img.width / img.height > target:
@@ -94,31 +99,59 @@ def finish(raw: bytes, w: int, h: int, path: str) -> None:
     if img.size != (w, h):
         img = img.resize((w, h), Image.LANCZOS)
         img = img.filter(ImageFilter.UnsharpMask(radius=1.2, percent=60, threshold=2))
-    img.save(path, "WEBP", quality=88, method=6)
+    img.save(path, "WEBP", quality=90, method=6)
+    return img
 
 
-def make(cid: str, shape: str) -> str:
-    w, h, framing, aspect = SHAPES[shape]
-    prompt = f"{CHARACTERS[cid]}. {framing}. {STYLE}"
-    errors = []
+def make_pc(phone: Image.Image, path: str) -> None:
+    """1920x1080 from the phone portrait: dark backdrop with a soft glow in the character's own colour,
+    the character on the right (same face as on the phone), empty space on the left for the app."""
+    W, H = 1920, 1080
+    small = phone.resize((24, 42), Image.LANCZOS)
+    pixels = sorted(small.getdata(), key=lambda c: max(c) - min(c), reverse=True)[:60]  # most colourful
+    glow = tuple(min(255, int(sum(p[i] for p in pixels) / len(pixels) * 1.15)) for i in range(3))
+    fw = int(H * phone.width / phone.height)
+    x0 = W - fw - int(W * 0.06)
+    cx = x0 + fw // 2
+    mask = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(mask)
+    d.ellipse((cx - W * 0.42, H * 0.35 - H * 0.75, cx + W * 0.42, H * 0.35 + H * 0.75), fill=135)
+    d.ellipse((-W * 0.25, H * 0.55, W * 0.35, H * 1.4), fill=60)  # faint glow bottom-left
+    mask = mask.filter(ImageFilter.GaussianBlur(260))
+    bg = Image.composite(Image.new("RGB", (W, H), glow), Image.new("RGB", (W, H), (8, 7, 12)), mask)
+    fg = phone.resize((fw, H), Image.LANCZOS)
+    feather = int(fw * 0.24)
+    ramp = [255 if feather <= x <= fw - feather else int(255 * (min(x, fw - x) / feather) ** 1.6) for x in range(fw)]
+    mask = Image.new("L", (fw, 1))
+    mask.putdata(ramp)
+    mask = mask.resize((fw, H))
+    bg.paste(fg, (x0, 0), mask)
+    bg.save(path, "WEBP", quality=90, method=6)
+
+
+def make(cid: str) -> str:
+    """Phone picture first (generated), then the PC picture built from it."""
+    w, h = 1080, 1920
+    prompt = f"{CHARACTERS[cid]}. {PHONE}. {STYLE}"
+    phone_path = os.path.join(OUT, f"{cid}_phone.webp")
+    errors, img, src = [], None, ""
     for attempt in range(4):
         try:
-            return _save(pollinations(prompt, w, h, SEEDS[cid]), w, h, cid, shape, "pollinations")
+            raw = pollinations(prompt, w, int(h / (1 - WATERMARK_CROP)), SEEDS[cid])
+            img, src = finish(raw, w, h, phone_path, crop_bottom=WATERMARK_CROP), "pollinations"
+            break
         except Exception as e:  # noqa: BLE001
             errors.append(f"pollinations#{attempt + 1}: {e}")
             time.sleep(20 * (attempt + 1))
-    if GEMINI_KEY:
+    if img is None and GEMINI_KEY:
         try:
-            return _save(gemini(prompt, aspect), w, h, cid, shape, "gemini")
+            img, src = finish(gemini(prompt, "9:16"), w, h, phone_path), "gemini"
         except Exception as e:  # noqa: BLE001
             errors.append(f"gemini: {e}")
-    raise RuntimeError("; ".join(errors))
-
-
-def _save(raw: bytes, w: int, h: int, cid: str, shape: str, src: str) -> str:
-    path = os.path.join(OUT, f"{cid}_{shape}.webp")
-    finish(raw, w, h, path)
-    return f"{src}, {os.path.getsize(path) // 1024} KB"
+    if img is None:
+        raise RuntimeError("; ".join(errors))
+    make_pc(img, os.path.join(OUT, f"{cid}_pc.webp"))
+    return f"{src}, phone {os.path.getsize(phone_path) // 1024} KB"
 
 
 def main() -> None:
@@ -129,19 +162,22 @@ def main() -> None:
     for cid in CHARACTERS:
         if only and cid not in only:
             continue
-        for shape in SHAPES:
-            path = os.path.join(OUT, f"{cid}_{shape}.webp")
-            if os.path.exists(path) and not force:
-                print(f"skip {cid}_{shape} (exists)")
-                continue
-            try:
-                print(f"ok   {cid}_{shape}: {make(cid, shape)}", flush=True)
-            except Exception as e:  # noqa: BLE001
-                print(f"FAIL {cid}_{shape}: {e}", flush=True)
-                failed.append(f"{cid}_{shape}")
-            time.sleep(8)  # be gentle with the free service
+        if os.path.exists(os.path.join(OUT, f"{cid}_phone.webp")) and not force:
+            print(f"skip {cid} (exists)")
+            continue
+        try:
+            msg = f"ok   {cid}: {make(cid)}"
+        except Exception as e:  # noqa: BLE001
+            msg = f"FAIL {cid}: {e}"
+            failed.append(cid)
+        print(msg, flush=True)
+        LOG.append(msg)
+        time.sleep(8)  # be gentle with the free service
+    LOG.append(f"failed: {failed or 'none'}")
+    with open(os.path.join(OUT, "generation_log.txt"), "w") as f:
+        f.write("\n".join(LOG) + "\n")
     print("failed:", failed or "none")
-    sys.exit(1 if failed and len(failed) == len(only or CHARACTERS) * len(SHAPES) else 0)
+    sys.exit(1 if failed and len(failed) == len(only or CHARACTERS) else 0)
 
 
 if __name__ == "__main__":
