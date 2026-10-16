@@ -1,5 +1,5 @@
-/// App text in Bangla / English / Hindi. `{name}` is replaced with the assistant's name.
-const _strings = <String, Map<String, String>>{
+/// App text in Bangla / English / Hindi. `{name}` = assistant name, `{user}` = person's name.
+const _s = <String, Map<String, String>>{
   'hello': {'bn': 'হ্যালো, {user}', 'en': 'Hello, {user}', 'hi': 'नमस्ते, {user}'},
   'subtitle': {'bn': 'আজ কীভাবে সাহায্য করতে পারি?', 'en': 'How can I assist you today?', 'hi': 'आज मैं कैसे मदद करूँ?'},
   'ask': {'bn': '{name}-কে কিছু জিজ্ঞেস করুন…', 'en': 'Ask {name} anything…', 'hi': '{name} से कुछ भी पूछें…'},
@@ -11,16 +11,41 @@ const _strings = <String, Map<String, String>>{
   'listening': {'bn': 'শুনছি…', 'en': 'Listening…', 'hi': 'सुन रही हूँ…'},
   'thinking': {'bn': 'ভাবছি…', 'en': 'Thinking…', 'hi': 'सोच रही हूँ…'},
   'speaking': {'bn': 'বলছি…', 'en': 'Speaking…', 'hi': 'बोल रही हूँ…'},
+  'coming_soon': {'bn': 'শিগগিরই আসছে', 'en': 'Coming soon', 'hi': 'जल्द आ रहा है'},
+  // login
   'login': {'bn': 'লগইন', 'en': 'Log in', 'hi': 'लॉग इन'},
   'register': {'bn': 'নতুন অ্যাকাউন্ট', 'en': 'Create account', 'hi': 'नया खाता'},
-  'phone_or_email': {'bn': 'ফোন নম্বর বা ইমেইল', 'en': 'Phone or email', 'hi': 'फ़ोन या ईमेल'},
+  'have_account': {'bn': 'আগে থেকে অ্যাকাউন্ট আছে? লগইন', 'en': 'Have an account? Log in', 'hi': 'खाता है? लॉग इन'},
+  'no_account': {'bn': 'অ্যাকাউন্ট নেই? নতুন খুলুন', 'en': 'No account? Create one', 'hi': 'खाता नहीं? नया बनाएँ'},
+  'email': {'bn': 'ইমেইল', 'en': 'Email', 'hi': 'ईमेल'},
   'password': {'bn': 'পাসওয়ার্ড', 'en': 'Password', 'hi': 'पासवर्ड'},
   'your_name': {'bn': 'আপনার নাম', 'en': 'Your name', 'hi': 'आपका नाम'},
-  'license_key': {'bn': 'লাইসেন্স কী', 'en': 'License key', 'hi': 'लाइसेंस की'},
-  'activate': {'bn': 'চালু করুন', 'en': 'Activate', 'hi': 'चालू करें'},
+  'forgot': {'bn': 'পাসওয়ার্ড ভুলে গেছেন?', 'en': 'Forgot password?', 'hi': 'पासवर्ड भूल गए?'},
+  'forgot_hint': {'bn': 'আপনার ইমেইল দিন, পাসওয়ার্ড বদলানোর লিংক পাঠানো হবে', 'en': 'Enter your email and we will send a reset link', 'hi': 'ईमेल डालें, रीसेट लिंक भेजेंगे'},
+  'send': {'bn': 'পাঠান', 'en': 'Send', 'hi': 'भेजें'},
+  'reset_sent': {'bn': 'লিংক পাঠানো হয়েছে, ইমেইল (Spam সহ) দেখুন', 'en': 'Link sent — check your email (and Spam)', 'hi': 'लिंक भेजा गया — ईमेल देखें'},
+  'google': {'bn': 'Google দিয়ে চালিয়ে যান', 'en': 'Continue with Google', 'hi': 'Google से जारी रखें'},
+  'or': {'bn': 'অথবা', 'en': 'or', 'hi': 'या'},
+  'offline': {'bn': 'অ্যাকাউন্ট ছাড়া চালান (এই ডিভাইসে)', 'en': 'Use without account (this device)', 'hi': 'बिना खाते के (इस डिवाइस पर)'},
+  // settings
+  'gemini_title': {'bn': 'Google AI Studio API কী', 'en': 'Google AI Studio API key', 'hi': 'Google AI Studio API की'},
+  'gemini_hint': {'bn': 'aistudio.google.com থেকে কী কপি করে এখানে পেস্ট করুন', 'en': 'Copy your key from aistudio.google.com and paste it here', 'hi': 'aistudio.google.com से की कॉपी करके यहाँ पेस्ट करें'},
+  'active': {'bn': 'চালু ✅', 'en': 'Active ✅', 'hi': 'चालू ✅'},
+  'inactive': {'bn': 'বন্ধ — সঠিক কী দিন', 'en': 'Inactive — add a valid key', 'hi': 'बंद — सही की डालें'},
+  'verify': {'bn': 'যাচাই করে চালু করুন', 'en': 'Verify & activate', 'hi': 'जाँचें और चालू करें'},
+  'checking': {'bn': 'যাচাই হচ্ছে…', 'en': 'Checking…', 'hi': 'जाँच हो रही है…'},
+  'key_ok': {'bn': 'কী সঠিক — চালু হয়েছে', 'en': 'Key is valid — activated', 'hi': 'की सही है — चालू'},
+  'key_bad': {'bn': 'কী সঠিক নয় — চালু হয়নি', 'en': 'Key is not valid — not activated', 'hi': 'की सही नहीं — चालू नहीं'},
+  'key_net': {'bn': 'ইন্টারনেট নেই, পরে আবার চেষ্টা করুন', 'en': 'No internet, try again', 'hi': 'इंटरनेट नहीं, फिर कोशिश करें'},
+  'remove_key': {'bn': 'কী মুছুন', 'en': 'Remove key', 'hi': 'की हटाएँ'},
+  'get_key': {'bn': 'কী কোথায় পাবেন?', 'en': 'Where do I get a key?', 'hi': 'की कहाँ मिलेगी?'},
+  'profile': {'bn': 'প্রোফাইল', 'en': 'Profile', 'hi': 'प्रोफ़ाइल'},
   'assistant_name': {'bn': 'অ্যাসিস্ট্যান্টের নাম', 'en': 'Assistant name', 'hi': 'असिस्टेंट का नाम'},
   'renames_left': {'bn': 'আর {n} বার নাম বদলাতে পারবেন', 'en': '{n} name changes left', 'hi': '{n} बार नाम बदल सकते हैं'},
-  'theme': {'bn': 'থিম', 'en': 'Theme', 'hi': 'थीम'},
+  'character': {'bn': 'চরিত্র', 'en': 'Character', 'hi': 'किरदार'},
+  'girls': {'bn': 'মেয়ে', 'en': 'Girls', 'hi': 'लड़कियाँ'},
+  'boys': {'bn': 'ছেলে', 'en': 'Boys', 'hi': 'लड़के'},
+  'theme': {'bn': 'রঙের থিম', 'en': 'Colour theme', 'hi': 'रंग थीम'},
   'voice': {'bn': 'কণ্ঠ', 'en': 'Voice', 'hi': 'आवाज़'},
   'female': {'bn': 'মেয়েলি', 'en': 'Female', 'hi': 'महिला'},
   'male': {'bn': 'ছেলে', 'en': 'Male', 'hi': 'पुरुष'},
@@ -29,40 +54,40 @@ const _strings = <String, Map<String, String>>{
   'auto': {'bn': 'অটো (যে ভাষায় বলবেন)', 'en': 'Auto (match my language)', 'hi': 'ऑटो (मेरी भाषा में)'},
   'memory': {'bn': 'মেমোরি', 'en': 'Memory', 'hi': 'मेमोरी'},
   'memory_hint': {'bn': '{name} আপনার সম্পর্কে যা মনে রেখেছে', 'en': 'What {name} remembers about you', 'hi': '{name} को आपके बारे में क्या याद है'},
-  'add': {'bn': 'যোগ করুন', 'en': 'Add', 'hi': 'जोड़ें'},
-  'save': {'bn': 'সেভ', 'en': 'Save', 'hi': 'सेव'},
+  'memory_add_hint': {'bn': 'যেমন: আমাকে ভাইয়া বলে ডাকবে', 'en': 'e.g. Call me "bro"', 'hi': 'जैसे: मुझे भैया बुलाना'},
+  'account': {'bn': 'অ্যাকাউন্ট', 'en': 'Account', 'hi': 'खाता'},
+  'offline_account': {'bn': 'অফলাইন প্রোফাইল (শুধু এই ডিভাইসে)', 'en': 'Offline profile (this device only)', 'hi': 'ऑफ़लाइन प्रोफ़ाइल'},
   'logout': {'bn': 'লগআউট', 'en': 'Log out', 'hi': 'लॉग आउट'},
-  'plan': {'bn': 'প্ল্যান', 'en': 'Plan', 'hi': 'प्लान'},
-  'ai_minutes_left': {'bn': 'AI-মিনিট বাকি: {n}', 'en': 'AI minutes left: {n}', 'hi': 'AI मिनट बाकी: {n}'},
-  'replace_device_q': {'bn': 'অন্য একটা ডিভাইস চালু আছে। সেটা সরিয়ে এখানে চালু করবেন?', 'en': 'Another device is active. Remove it and use this one?', 'hi': 'दूसरा डिवाइस चालू है। उसे हटाकर यहाँ चालू करें?'},
-  'server': {'bn': 'সার্ভারের ঠিকানা', 'en': 'Server address', 'hi': 'सर्वर का पता'},
-  'yes': {'bn': 'হ্যাঁ', 'en': 'Yes', 'hi': 'हाँ'},
-  'no': {'bn': 'না', 'en': 'No', 'hi': 'नहीं'},
-  'coming_soon': {'bn': 'শিগগিরই আসছে', 'en': 'Coming soon', 'hi': 'जल्द आ रहा है'},
+  'save': {'bn': 'সেভ', 'en': 'Save', 'hi': 'सेव'},
+  'cancel': {'bn': 'বাতিল', 'en': 'Cancel', 'hi': 'रद्द'},
+  'need_key': {'bn': 'কথা বলতে আগে সেটিংসে Gemini API কী চালু করুন', 'en': 'Activate your Gemini API key in Settings first', 'hi': 'पहले सेटिंग्स में Gemini API की चालू करें'},
 };
 
-/// Server error codes → friendly text.
-const _errors = <String, Map<String, String>>{
-  'BAD_LOGIN': {'bn': 'ফোন/ইমেইল বা পাসওয়ার্ড ভুল', 'en': 'Wrong phone/email or password', 'hi': 'फ़ोन/ईमेल या पासवर्ड गलत'},
-  'LOGIN_TAKEN': {'bn': 'এই নম্বর/ইমেইল আগেই ব্যবহার হয়েছে', 'en': 'Already registered', 'hi': 'पहले से रजिस्टर है'},
-  'SWAP_LIMIT': {'bn': '৩০ দিনে ২ বারের বেশি ডিভাইস বদলানো যায় না', 'en': 'Device can change only 2 times in 30 days', 'hi': '30 दिन में 2 बार से ज़्यादा डिवाइस नहीं बदल सकते'},
-  'BAD_KEY': {'bn': 'লাইসেন্স কী সঠিক নয়', 'en': 'License key not valid', 'hi': 'लाइसेंस की सही नहीं'},
-  'KEY_USED': {'bn': 'এই কী আগেই ব্যবহার হয়েছে', 'en': 'This key was already used', 'hi': 'यह की पहले ही इस्तेमाल हो चुकी'},
+/// Error codes (Firebase + ours) → friendly text.
+const _e = <String, Map<String, String>>{
+  'ACCOUNTS_OFF': {'bn': 'অ্যাকাউন্ট লগইন এখনো চালু হয়নি — আপাতত "অ্যাকাউন্ট ছাড়া চালান" ব্যবহার করুন', 'en': 'Account login is not set up yet — use "without account" for now', 'hi': 'खाता लॉगिन अभी चालू नहीं'},
+  'GOOGLE_OFF': {'bn': 'Google লগইন এখনো চালু হয়নি', 'en': 'Google sign-in is not set up yet', 'hi': 'Google लॉगिन अभी चालू नहीं'},
+  'GOOGLE_FAILED': {'bn': 'Google লগইন হয়নি, আবার চেষ্টা করুন', 'en': 'Google sign-in failed, try again', 'hi': 'Google लॉगिन नहीं हुआ'},
+  'EMAIL_EXISTS': {'bn': 'এই ইমেইলে আগেই অ্যাকাউন্ট আছে — লগইন করুন', 'en': 'This email already has an account — log in', 'hi': 'इस ईमेल का खाता है — लॉग इन करें'},
+  'INVALID_LOGIN_CREDENTIALS': {'bn': 'ইমেইল বা পাসওয়ার্ড ভুল', 'en': 'Wrong email or password', 'hi': 'ईमेल या पासवर्ड गलत'},
+  'INVALID_PASSWORD': {'bn': 'পাসওয়ার্ড ভুল', 'en': 'Wrong password', 'hi': 'पासवर्ड गलत'},
+  'EMAIL_NOT_FOUND': {'bn': 'এই ইমেইলে কোনো অ্যাকাউন্ট নেই', 'en': 'No account with this email', 'hi': 'इस ईमेल का खाता नहीं'},
+  'INVALID_EMAIL': {'bn': 'ইমেইল সঠিক নয়', 'en': 'Email is not valid', 'hi': 'ईमेल सही नहीं'},
+  'MISSING_PASSWORD': {'bn': 'পাসওয়ার্ড দিন', 'en': 'Enter a password', 'hi': 'पासवर्ड डालें'},
+  'WEAK_PASSWORD': {'bn': 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের দিন', 'en': 'Password needs at least 6 characters', 'hi': 'पासवर्ड कम से कम 6 अक्षर'},
+  'TOO_MANY_ATTEMPTS_TRY_LATER': {'bn': 'অনেকবার চেষ্টা হয়েছে, কিছুক্ষণ পর আবার চেষ্টা করুন', 'en': 'Too many attempts, try later', 'hi': 'बहुत कोशिशें, बाद में'},
+  'USER_DISABLED': {'bn': 'এই অ্যাকাউন্ট বন্ধ করা হয়েছে', 'en': 'This account is disabled', 'hi': 'यह खाता बंद है'},
+  'NETWORK': {'bn': 'ইন্টারনেট সংযোগ নেই', 'en': 'No internet connection', 'hi': 'इंटरनेट नहीं है'},
   'RENAME_LIMIT': {'bn': 'নাম সর্বোচ্চ ৫ বার বদলানো যায়', 'en': 'Name can be changed at most 5 times', 'hi': 'नाम अधिकतम 5 बार बदल सकते हैं'},
   'NAME_TOO_SHORT': {'bn': 'নাম কমপক্ষে ২ অক্ষরের হতে হবে', 'en': 'Name needs at least 2 letters', 'hi': 'नाम में कम से कम 2 अक्षर'},
   'SENSITIVE': {'bn': 'পাসওয়ার্ড, পিন, কার্ড নম্বর সেভ করা হয় না', 'en': 'Passwords, PINs and card numbers are never saved', 'hi': 'पासवर्ड, पिन, कार्ड नंबर सेव नहीं होते'},
-  'MEMORY_LIMIT': {'bn': 'মেমোরি পূর্ণ, কিছু মুছুন বা Premium নিন', 'en': 'Memory full — delete some or upgrade', 'hi': 'मेमोरी भर गई'},
-  'QUOTA_EXCEEDED': {'bn': 'এই মাসের AI-মিনিট শেষ', 'en': 'AI minutes finished for this month', 'hi': 'इस महीने के AI मिनट खत्म'},
-  'PLAN_EXPIRED': {'bn': 'প্ল্যানের মেয়াদ শেষ', 'en': 'Your plan has expired', 'hi': 'प्लान खत्म हो गया'},
-  'NO_SERVER': {'bn': 'সার্ভারের ঠিকানা দিন', 'en': 'Enter the server address', 'hi': 'सर्वर का पता डालें'},
-  'NETWORK': {'bn': 'ইন্টারনেট সংযোগ নেই', 'en': 'No internet connection', 'hi': 'इंटरनेट नहीं है'},
+  'MEMORY_LIMIT': {'bn': 'মেমোরি পূর্ণ (১০০), কিছু মুছুন', 'en': 'Memory is full (100) — delete some', 'hi': 'मेमोरी भर गई (100)'},
 };
 
 String tr(String lang, String key, {Map<String, String> vars = const {}}) {
-  var s = _strings[key]?[lang] ?? _strings[key]?['en'] ?? key;
+  var s = _s[key]?[lang] ?? _s[key]?['en'] ?? key;
   vars.forEach((k, v) => s = s.replaceAll('{$k}', v));
   return s;
 }
 
-String trError(String lang, String code, String fallback) =>
-    _errors[code]?[lang] ?? _errors[code]?['en'] ?? fallback;
+String trError(String lang, String code) => _e[code]?[lang] ?? _e[code]?['en'] ?? code;

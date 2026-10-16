@@ -1,7 +1,7 @@
 name: tommy
 description: Tommy – Bangla voice AI assistant (Android + Windows)
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.5.0 <4.0.0"
@@ -10,9 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.2
-  shared_preferences: ^2.3.2
   flutter_secure_storage: ^9.2.2
-  uuid: ^4.5.1
+  path_provider: ^2.1.4
+  google_sign_in: ^7.1.0
+  url_launcher: ^6.3.1
+  crypto: ^3.0.5
 
 dev_dependencies:
   flutter_test:

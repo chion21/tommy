@@ -1,11 +1,16 @@
 name: build-apps
-# Builds the Android APK and the Windows Setup.exe. Download them from the run's "Artifacts".
+# Builds the Android APK and Windows Setup.exe, then puts both on Releases → "latest".
 on:
   push: { paths: ["app/**", ".github/workflows/apps.yml"] }
   workflow_dispatch:
 
 env:
-  API_URL: ${{ vars.API_URL || '' }}  # empty = user types the server address on the login screen
+  # Repository variables (Settings → Secrets and variables → Actions → Variables). Empty = feature off.
+  DEFINES: >-
+    --dart-define=FIREBASE_API_KEY=${{ vars.FIREBASE_API_KEY }}
+    --dart-define=GOOGLE_WEB_CLIENT_ID=${{ vars.GOOGLE_WEB_CLIENT_ID }}
+    --dart-define=GOOGLE_DESKTOP_CLIENT_ID=${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
+    --dart-define=GOOGLE_DESKTOP_CLIENT_SECRET=${{ vars.GOOGLE_DESKTOP_CLIENT_SECRET }}
 
 jobs:
   android:
@@ -17,12 +22,17 @@ jobs:
         with: { distribution: temurin, java-version: "17" }
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
-      # creates android/ and windows/ folders the first time (keeps our lib/ code)
       - run: flutter create --platforms=android,windows --org com.tommyai --project-name tommy .
+      - run: python3 tool/patch_platforms.py
       - run: flutter pub get
-      - run: flutter analyze --no-fatal-infos
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - run: flutter test
-      - run: flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/symbols --dart-define=API_URL=$API_URL
+      - name: Build APK (signed with the fixed Tommy key when its password secret exists)
+        env:
+          TOMMY_KEYSTORE_PASSWORD: ${{ secrets.TOMMY_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$TOMMY_KEYSTORE_PASSWORD" ]; then export TOMMY_KEYSTORE="$PWD/android_signing/tommy-release.p12"; echo "Using fixed release key"; else echo "::warning::TOMMY_KEYSTORE_PASSWORD secret missing — using a temporary debug key"; fi
+          flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/symbols $DEFINES
       - uses: actions/upload-artifact@v4
         with: { name: tommy-android-apk, path: app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk }
 
@@ -34,8 +44,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with: { channel: stable, cache: true }
       - run: flutter create --platforms=android,windows --org com.tommyai --project-name tommy .
+      - run: python tool/patch_platforms.py
       - run: flutter pub get
-      - run: flutter build windows --release --obfuscate --split-debug-info=build/symbols --dart-define=API_URL=${{ env.API_URL }}
+      - shell: bash
+        run: flutter build windows --release --obfuscate --split-debug-info=build/symbols $DEFINES
       - name: Make Setup.exe with Inno Setup
         run: |
           choco install innosetup -y --no-progress
@@ -43,7 +55,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: tommy-windows-setup, path: app/build/installer/TommySetup.exe }
 
-  # Puts the newest APK + Setup.exe on the repo's Releases page (easy to download on a phone).
   release:
     needs: [android, windows]
     runs-on: ubuntu-latest

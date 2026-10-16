@@ -1,168 +1,279 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_state.dart';
+import '../core/gemini.dart';
 import '../core/themes.dart';
+import '../widgets/character_art.dart';
 import 'memory.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   final AppState app;
   const SettingsScreen({super.key, required this.app});
 
-  void _toast(BuildContext context, String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
 
-  Future<void> _rename(BuildContext context) async {
-    final ctrl = TextEditingController(text: app.name);
-    final newName = await showDialog<String>(
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _keyCtrl = TextEditingController();
+  bool _checking = false;
+  bool _girls = true;
+
+  AppState get app => widget.app;
+
+  void _toast(String msg) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _verifyKey() async {
+    setState(() => _checking = true);
+    final res = await app.activateGeminiKey(_keyCtrl.text);
+    if (!mounted) return;
+    setState(() => _checking = false);
+    if (res == KeyCheck.valid) _keyCtrl.clear();
+    _toast(app.t(switch (res) { KeyCheck.valid => 'key_ok', KeyCheck.invalid => 'key_bad', KeyCheck.network => 'key_net' }));
+  }
+
+  Future<String?> _ask(String title, String initial, {String? help, int? maxLength}) {
+    final ctrl = TextEditingController(text: initial);
+    return showDialog<String>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(app.t('assistant_name')),
+        title: Text(title),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: ctrl, maxLength: 20, autofocus: true),
-          Text(app.t('renames_left', vars: {'n': '${app.assistant['renames_left']}'})),
+          TextField(controller: ctrl, autofocus: true, maxLength: maxLength),
+          if (help != null) Text(help),
         ]),
-        actions: [FilledButton(onPressed: () => Navigator.pop(c, ctrl.text.trim()), child: Text(app.t('save')))],
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(app.t('cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(c, ctrl.text.trim()), child: Text(app.t('save'))),
+        ],
       ),
     );
-    if (newName == null || newName.isEmpty || newName == app.name) return;
-    try {
-      await app.rename(newName);
-      // Next step in the build: open the wake-word recording screen ("হেই <name>" ×5) here.
-    } catch (e) {
-      if (context.mounted) _toast(context, app.err(e));
-    }
   }
 
-  Future<void> _redeem(BuildContext context) async {
-    final ctrl = TextEditingController();
-    final key = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(app.t('license_key')),
-        content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: 'TOMMY-XXXX-XXXX-XXXX')),
-        actions: [FilledButton(onPressed: () => Navigator.pop(c, ctrl.text), child: Text(app.t('activate')))],
-      ),
-    );
-    if (key == null || key.trim().isEmpty) return;
-    try {
-      await app.api.redeem(key);
-      await app.refresh();
-    } catch (e) {
-      if (context.mounted) _toast(context, app.err(e));
-    }
-  }
-
-  Future<void> _set(BuildContext context, String k, String v) async {
-    try {
-      await app.setPref(k, v);
-    } catch (e) {
-      if (context.mounted) _toast(context, app.err(e));
-    }
-  }
+  Widget _section(String title, List<Widget> children) => Padding(
+        padding: const EdgeInsets.only(top: 18),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          ...children,
+        ]),
+      );
 
   @override
   Widget build(BuildContext context) {
-    final a = app.assistant;
-    final usage = (app.me['usage'] as Map?) ?? const {};
-    final minsLeft = ((usage['ai_seconds_left'] ?? 0) as num) ~/ 60;
-    final voices = ((a['options'] as Map?)?['voices'] as Map?) ??
-        const {'aoede': 'female', 'kore': 'female', 'leda': 'female', 'puck': 'male', 'charon': 'male'};
+    final p = app.profile;
+    final primary = app.theme.primary;
     const langNames = {'bn': 'বাংলা', 'en': 'English', 'hi': 'हिन्दी'};
+    final shown = characters.where((c) => c.female == _girls).toList();
 
-    return ListView(padding: const EdgeInsets.all(16), children: [
-      Card(
-        child: ListTile(
-          leading: const Icon(Icons.workspace_premium),
-          title: Text('${app.t('plan')}: ${app.me['plan'] ?? '-'}'),
-          subtitle: Text(app.t('ai_minutes_left', vars: {'n': '$minsLeft'})),
-          trailing: TextButton(onPressed: () => _redeem(context), child: Text(app.t('activate'))),
-        ),
-      ),
-      ListTile(
-        leading: const Icon(Icons.badge_outlined),
-        title: Text(app.t('assistant_name')),
-        subtitle: Text('${app.name} · ${app.t('renames_left', vars: {'n': '${a['renames_left']}'})}'),
-        onTap: () => _rename(context),
-      ),
-      const Divider(),
-      Text(app.t('theme'), style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
-      Wrap(spacing: 10, runSpacing: 10, children: [
-        for (final th in tommyThemes)
-          GestureDetector(
-            onTap: () => _set(context, 'theme', th.id),
-            child: Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(colors: [th.primary, th.background]),
-                border: Border.all(color: a['theme'] == th.id ? Colors.white : Colors.transparent, width: 3),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView(padding: const EdgeInsets.all(16), children: [
+          // ---------- Gemini API key ----------
+          Card(
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: app.geminiActive ? Colors.greenAccent : Colors.redAccent, width: 1.2)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.key_rounded),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(app.t('gemini_title'), style: const TextStyle(fontWeight: FontWeight.w700))),
+                  Chip(
+                    label: Text(app.geminiActive ? app.t('active') : app.t('inactive')),
+                    backgroundColor: (app.geminiActive ? Colors.green : Colors.red).withValues(alpha: 0.2),
+                  ),
+                ]),
+                if (app.geminiActive) ...[
+                  const SizedBox(height: 4),
+                  Text(app.geminiMasked, style: const TextStyle(fontFamily: 'monospace')),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                        onPressed: app.removeGeminiKey, icon: const Icon(Icons.delete_outline), label: Text(app.t('remove_key'))),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  Text(app.t('gemini_hint'), style: const TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _keyCtrl,
+                    obscureText: true,
+                    decoration: const InputDecoration(hintText: 'AIza…', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    TextButton(
+                      onPressed: () => launchUrl(Uri.parse('https://aistudio.google.com/apikey'),
+                          mode: LaunchMode.externalApplication),
+                      child: Text(app.t('get_key')),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: _checking ? null : _verifyKey,
+                      child: Text(_checking ? app.t('checking') : app.t('verify')),
+                    ),
+                  ]),
+                ],
+              ]),
+            ),
+          ),
+
+          // ---------- profile ----------
+          _section(app.t('profile'), [
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: Text(app.t('your_name')),
+              subtitle: Text(app.userName),
+              onTap: () async {
+                final v = await _ask(app.t('your_name'), app.userName, maxLength: 40);
+                if (v != null && v.isNotEmpty) await app.setPref('display_name', v);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: Text(app.t('assistant_name')),
+              subtitle: Text('${app.name} · ${app.t('renames_left', vars: {'n': '${app.renamesLeft}'})}'),
+              onTap: () async {
+                final v = await _ask(app.t('assistant_name'), app.name,
+                    maxLength: 20, help: app.t('renames_left', vars: {'n': '${app.renamesLeft}'}));
+                if (v == null || v.isEmpty) return;
+                try {
+                  await app.rename(v);
+                } catch (e) {
+                  _toast(app.err(e));
+                }
+              },
+            ),
+          ]),
+
+          // ---------- character ----------
+          _section(app.t('character'), [
+            SegmentedButton<bool>(
+              segments: [
+                ButtonSegment(value: true, label: Text(app.t('girls'))),
+                ButtonSegment(value: false, label: Text(app.t('boys'))),
+              ],
+              selected: {_girls},
+              onSelectionChanged: (s) => setState(() => _girls = s.first),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 150,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: shown.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final c = shown[i];
+                  final sel = p['character'] == c.id;
+                  return GestureDetector(
+                    onTap: () => app.setPref('character', c.id),
+                    child: Column(children: [
+                      Container(
+                        width: 84,
+                        height: 120,
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: sel ? primary : Colors.white24, width: sel ? 3 : 1),
+                        ),
+                        child: CharacterArt(c: c),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(c.label, style: TextStyle(fontSize: 12, color: sel ? primary : null)),
+                    ]),
+                  );
+                },
               ),
-              alignment: Alignment.bottomCenter,
-              child: Text(th.label, style: const TextStyle(fontSize: 10)),
             ),
-          ),
-      ]),
-      const Divider(),
-      Text(app.t('voice'), style: Theme.of(context).textTheme.titleMedium),
-      Wrap(spacing: 8, children: [
-        for (final e in voices.entries)
-          ChoiceChip(
-            label: Text('${e.key[0].toUpperCase()}${e.key.substring(1)} · ${app.t(e.value as String)}'),
-            selected: a['voice'] == e.key,
-            onSelected: (_) => _set(context, 'voice', e.key),
-          ),
-      ]),
-      const Divider(),
-      ListTile(
-        leading: const Icon(Icons.translate),
-        title: Text(app.t('app_language')),
-        trailing: DropdownButton<String>(
-          value: a['ui_language'] as String? ?? 'bn',
-          items: [for (final e in langNames.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
-          onChanged: (v) => v == null ? null : _set(context, 'ui_language', v),
-        ),
-      ),
-      ListTile(
-        leading: const Icon(Icons.record_voice_over),
-        title: Text(app.t('talk_language')),
-        trailing: DropdownButton<String>(
-          value: a['speech_language'] as String? ?? 'auto',
-          items: [
-            DropdownMenuItem(value: 'auto', child: Text(app.t('auto'))),
-            for (final e in langNames.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: (v) => v == null ? null : _set(context, 'speech_language', v),
-        ),
-      ),
-      const Divider(),
-      ListTile(
-        leading: const Icon(Icons.psychology_alt_outlined),
-        title: Text(app.t('memory')),
-        subtitle: Text(app.t('memory_hint')),
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MemoryScreen(app: app))),
-      ),
-      ListTile(
-        leading: const Icon(Icons.dns_outlined),
-        title: Text(app.t('server')),
-        subtitle: Text(app.api.baseUrl),
-        onTap: () async {
-          final ctrl = TextEditingController(text: app.api.baseUrl);
-          final url = await showDialog<String>(
-            context: context,
-            builder: (c) => AlertDialog(
-              title: Text(app.t('server')),
-              content: TextField(controller: ctrl, keyboardType: TextInputType.url),
-              actions: [FilledButton(onPressed: () => Navigator.pop(c, ctrl.text), child: Text(app.t('save')))],
+          ]),
+
+          // ---------- colours ----------
+          _section(app.t('theme'), [
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              for (final th in tommyThemes)
+                GestureDetector(
+                  onTap: () => app.setPref('theme', th.id),
+                  child: Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(colors: [th.primary, th.background]),
+                      border: Border.all(color: p['theme'] == th.id ? Colors.white : Colors.transparent, width: 3),
+                    ),
+                    alignment: Alignment.bottomCenter,
+                    child: Text(th.label, style: const TextStyle(fontSize: 9)),
+                  ),
+                ),
+            ]),
+          ]),
+
+          // ---------- voice ----------
+          _section(app.t('voice'), [
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final e in voices.entries)
+                ChoiceChip(
+                  label: Text('${e.key[0].toUpperCase()}${e.key.substring(1)} · ${app.t(e.value ? 'female' : 'male')}'),
+                  selected: p['voice'] == e.key,
+                  onSelected: (_) => app.setPref('voice', e.key),
+                ),
+            ]),
+          ]),
+
+          // ---------- languages ----------
+          _section(app.t('app_language'), [
+            ListTile(
+              leading: const Icon(Icons.translate),
+              title: Text(app.t('app_language')),
+              trailing: DropdownButton<String>(
+                value: p['ui_language'] as String,
+                items: [for (final e in langNames.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+                onChanged: (v) {
+                  if (v != null) app.setPref('ui_language', v);
+                },
+              ),
             ),
-          );
-          if (url != null && url.trim().isNotEmpty) {
-            await app.api.setServer(url);
-            await app.refresh();
-          }
-        },
+            ListTile(
+              leading: const Icon(Icons.record_voice_over),
+              title: Text(app.t('talk_language')),
+              trailing: DropdownButton<String>(
+                value: p['speech_language'] as String,
+                items: [
+                  DropdownMenuItem(value: 'auto', child: Text(app.t('auto'))),
+                  for (final e in langNames.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
+                ],
+                onChanged: (v) {
+                  if (v != null) app.setPref('speech_language', v);
+                },
+              ),
+            ),
+          ]),
+
+          // ---------- memory & account ----------
+          _section(app.t('account'), [
+            ListTile(
+              leading: const Icon(Icons.psychology_alt_outlined),
+              title: Text(app.t('memory')),
+              subtitle: Text(app.t('memory_hint')),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MemoryScreen(app: app))),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_circle_outlined),
+              title: Text(app.session?.provider == 'offline' ? app.t('offline_account') : (app.session?.email ?? '')),
+            ),
+            ListTile(leading: const Icon(Icons.logout), title: Text(app.t('logout')), onTap: app.logout),
+          ]),
+          const SizedBox(height: 24),
+        ]),
       ),
-      ListTile(leading: const Icon(Icons.logout), title: Text(app.t('logout')), onTap: app.logout),
-    ]);
+    );
   }
 }
