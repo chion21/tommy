@@ -33,7 +33,7 @@ CHARACTERS = {
     "f1": "elegant adult woman with long straight black hair and gentle red eyes, black high-collar outfit with red accents, red neon light",
     "f2": "graceful adult woman with silver-lavender wavy hair, futuristic purple jacket, holding a softly glowing violet rose, purple city bokeh",
     "f3": "confident adult woman with a sleek teal bob, white tech jacket, cyan holographic interface glowing around her, deep blue background",
-    "f4": "gentle adult woman with long soft pink hair and a hair clip, cream cardigan, falling cherry blossom petals, warm pink light",
+    "f4": "gentle adult woman with long soft pink hair, elegant cream cardigan, upper-body anime portrait, cherry blossom petals floating around her, warm pink night light",
     "f5": "confident adult woman with a golden-blonde ponytail, black and gold outfit, warm golden rim light, dark luxurious background",
     "m1": "calm adult man with a strong jawline with short dark-blue hair, black techwear jacket, electric blue neon light, rainy night city bokeh",
     "m2": "cool adult man with a sharp jawline with messy black hair and red eyes, dark long coat with red details, red neon glow",
@@ -42,6 +42,7 @@ CHARACTERS = {
     "m5": "confident adult man with a strong jawline with warm brown hair, orange and black bomber jacket, sunset orange neon glow",
 }
 SEEDS = {cid: 2024 + i * 53 for i, cid in enumerate(CHARACTERS)}
+SEEDS["f4"] = 7777  # first try came out wrong
 
 WATERMARK_CROP = 0.07  # the free service stamps a small logo bottom-right; we cut that strip off
 LOG = []
