@@ -1,6 +1,3 @@
-f3_phone.webp original (555, 1061)
-ok   f3: pollinations, phone 61 KB
-f4_phone.webp original (555, 1061)
-ok   f4: pollinations, phone 85 KB
-FAIL m3: pollinations#1: HTTP Error 402: Payment Required {"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit reached: 1 image every 45 seconds per IP. Retry after 32s, or get unlimited images with a pollen key at https://enter.p; pollinations#2: HTTP Error 402: Payment Required {"status":402,"success":false,"error":{"code":"FREE_LIMIT","message":"Free limit reached: 1 image every 45 seconds per IP. Retry after 17s, or get unlimited images with a pollen key at https://enter.p; pollinations#3: The read operation timed out ; pollinations#4: The read operation timed out ; gemini: HTTP Error 429: Too Many Requests
-failed: ['m3']
+m3_phone.webp original (555, 1061)
+ok   m3: pollinations, phone (554, 986)
+failed: none
