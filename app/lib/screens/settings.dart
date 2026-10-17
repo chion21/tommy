@@ -10,6 +10,7 @@ import '../core/persona.dart';
 import '../core/themes.dart';
 import '../widgets/character_art.dart';
 import 'characters.dart';
+import 'link_screens.dart';
 import 'memory.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -168,6 +169,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ]),
             ),
           ),
+
+          // ---------- phone ↔ PC link (QR) ----------
+          _section(app.t('link_title'), [LinkSection(app: app)]),
 
           // ---------- how Tommy behaves ----------
           _section(app.t('role'), [

@@ -15,6 +15,7 @@ String buildSystemPrompt({
   required bool handsFree,
   required String platform, // android | windows
   required DateTime now,
+  String linkedDevice = '', // '' | 'pc online' | 'pc offline' | 'phone online' | 'phone offline'
 }) {
   final who = userName.isEmpty ? 'the user' : userName;
   final address = callMe.isNotEmpty ? callMe : (userName.isNotEmpty ? userName : '');
@@ -78,6 +79,9 @@ ACTIONS (set "action" and "arg"; otherwise action="none"):
 - whatsapp: arg = phone number if known (else ""), text = the message to send.
 - answer_call / reject_call: only when there is an incoming call event and they told you what to do.
 - stop: they want you to stop listening / be quiet.
+- "on": which device should do the action — "here" (this device, default), "pc" or "phone". Use "pc"/"phone" when they
+  say so (e.g. "পিসিতে ইউটিউব চালাও" from the phone → on="pc").
+  ${linkedDevice.isEmpty ? 'No other device is linked yet; if they ask for the other device, tell them to link it with the QR code in Settings.' : 'Linked device: $linkedDevice. If it is offline, tell them it is offline.'}
 If they tell you something worth remembering long-term about themselves (name, likes, people, routines), put it in "remember"
 as a short fact. Never remember passwords, PINs, OTPs or card/bank numbers.
 

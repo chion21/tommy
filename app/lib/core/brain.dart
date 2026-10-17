@@ -12,8 +12,9 @@ class BrainReply {
   final String arg;
   final String text;
   final String remember; // a fact worth saving to memory, or ''
+  final String on; // here | pc | phone — which device should do the action
   const BrainReply({this.ignore = false, this.heard = '', this.reply = '', this.action = 'none', this.arg = '',
-      this.text = '', this.remember = ''});
+      this.text = '', this.remember = '', this.on = 'here'});
 }
 
 class BrainError implements Exception {
@@ -96,6 +97,7 @@ class Brain {
       'arg': {'type': 'STRING'},
       'text': {'type': 'STRING'},
       'remember': {'type': 'STRING'},
+      'on': {'type': 'STRING', 'enum': ['here', 'pc', 'phone']},
     },
     'required': ['ignore', 'heard', 'reply', 'action'],
   };
@@ -152,6 +154,7 @@ class Brain {
       arg: (j['arg'] ?? '').toString(),
       text: (j['text'] ?? '').toString(),
       remember: (j['remember'] ?? '').toString(),
+      on: (j['on'] ?? 'here').toString(),
     );
   }
 

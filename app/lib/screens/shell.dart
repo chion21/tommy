@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/app_state.dart';
 import '../widgets/character_art.dart';
 import '../widgets/edge_glow.dart';
+import '../widgets/link_badge.dart';
 import '../widgets/orb.dart';
 import '../widgets/waveform.dart';
 import 'settings.dart';
@@ -96,7 +97,10 @@ class _Home extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(app.t('hello'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+                Row(children: [
+                  Expanded(child: Text(app.t('hello'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800))),
+                  LinkBadge(app: app),
+                ]),
                 Text(app.t('subtitle'), style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
                 const Spacer(),
                 Center(child: CrystalOrb(color: th.primary, state: app.voice)),
@@ -304,7 +308,9 @@ class _SideBar extends StatelessWidget {
       child: Column(children: [
         const SizedBox(height: 16),
         Text(app.name, style: TextStyle(color: app.theme.primary, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
-        const SizedBox(height: 24),
+        const SizedBox(height: 8),
+        LinkBadge(app: app, compact: true),
+        const SizedBox(height: 16),
         item(items[0]),
         item(items[1]),
         const SizedBox(height: 12),

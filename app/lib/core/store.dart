@@ -54,4 +54,18 @@ class Store {
   Future<String?> geminiKey(String uid) => _secure.read(key: 'gemini_key_$uid');
   Future<void> setGeminiKey(String uid, String key) => _secure.write(key: 'gemini_key_$uid', value: key);
   Future<void> deleteGeminiKey(String uid) => _secure.delete(key: 'gemini_key_$uid');
+
+  // ---- PC ↔ phone pairing (per user) ----
+  Future<Map<String, dynamic>?> pairing(String uid) async {
+    final s = await _secure.read(key: 'pair_$uid');
+    if (s == null) return null;
+    try {
+      return jsonDecode(s) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setPairing(String uid, Map<String, dynamic>? p) =>
+      p == null ? _secure.delete(key: 'pair_$uid') : _secure.write(key: 'pair_$uid', value: jsonEncode(p));
 }

@@ -8,6 +8,7 @@ import 'actions.dart';
 import 'auth.dart';
 import 'brain.dart';
 import 'gemini.dart';
+import 'link.dart';
 import 'native.dart';
 import 'persona.dart';
 import 'store.dart';
@@ -70,6 +71,8 @@ class AppState extends ChangeNotifier {
   bool _busy = false;
   String? _pendingEvent; // incoming call/message waiting for the person's decision
   StreamSubscription? _eventsSub;
+  DeviceLink? link;
+  Pairing? pendingPairing; // PC: QR being shown, waiting for the phone
   final Map<String, DateTime> _recentEvents = {};
 
   bool get loggedIn => session != null;
@@ -88,6 +91,9 @@ class AppState extends ChangeNotifier {
   TommyTheme get theme => themeById(profile['theme'] as String);
   Character get character => characterById(profile['character'] as String);
   bool get voiceFemale => voices[profile['voice']] ?? true;
+  bool get linked => link != null;
+  bool get peerOnline => link?.peerOnline ?? false;
+  String get peerLabel => link == null ? '' : (link!.peerName.isNotEmpty ? link!.peerName : link!.peer.toUpperCase());
 
   String t(String key, {Map<String, String> vars = const {}}) =>
       tr(lang, key, vars: {'name': name, 'user': userName, ...vars});
@@ -123,6 +129,7 @@ class AppState extends ChangeNotifier {
     _brain = geminiActive ? Brain(key) : null;
     notifyListeners();
     _startEvents();
+    unawaited(_startLink());
     if (geminiActive && profile['hands_free'] == true) unawaited(startLoop());
     if (geminiActive) {
       if (await checkGeminiKey(key) == KeyCheck.invalid) {
@@ -148,6 +155,8 @@ class AppState extends ChangeNotifier {
   Future<void> logout() async {
     await stopLoop();
     await _eventsSub?.cancel();
+    await link?.stop();
+    link = null;
     if (session?.provider == 'google') await auth.signOutGoogle();
     await store.clearSession();
     session = null;
@@ -250,6 +259,7 @@ class AppState extends ChangeNotifier {
         handsFree: _loopOn,
         platform: Platform.isAndroid ? 'android' : 'windows',
         now: DateTime.now(),
+        linkedDevice: link == null ? '' : '${link!.peer} ${peerOnline ? 'online' : 'offline'}',
       );
 
   /// Mic button: if the always-listening loop is running, it stops/starts it; otherwise listens once.
@@ -367,9 +377,15 @@ class AppState extends ChangeNotifier {
         await stopLoop();
         return;
       }
-      final say = _say(r.reply);
-      if (r.action != 'none') await runAction(r);
-      await say;
+      final target = r.on == 'here' ? DeviceLink.thisDevice : r.on;
+      if (r.action != 'none' && target != DeviceLink.thisDevice) {
+        final sent = peerOnline && await link!.sendCommand(r.action, r.arg, r.text);
+        await _say(sent ? r.reply : t('peer_offline', vars: {'dev': t(target == 'pc' ? 'dev_pc' : 'dev_phone')}));
+      } else {
+        final say = _say(r.reply);
+        if (r.action != 'none') await runAction(r);
+        await say;
+      }
       _setVoice(handsFree ? VoiceState.listening : VoiceState.idle, '');
     } finally {
       _busy = false;
@@ -388,6 +404,71 @@ class AppState extends ChangeNotifier {
     } else {
       await io.speakDevice(text, profile['speech_language'] == 'auto' ? lang : profile['speech_language'] as String);
     }
+  }
+
+  // ---------- PC ↔ phone link (QR) ----------
+  Future<void> _startLink() async {
+    await link?.stop();
+    link = null;
+    final p = Pairing.fromJson(await store.pairing(uid));
+    if (p == null) return;
+    await _connectLink(p);
+  }
+
+  Future<void> _connectLink(Pairing p) async {
+    await link?.stop();
+    final l = DeviceLink(
+      me: DeviceLink.thisDevice,
+      myName: Platform.isAndroid ? '${userName.isEmpty ? '' : '$userName-এর '}Phone' : Platform.localHostname,
+      pairing: p,
+      onChange: () {
+        if (pendingPairing != null && link?.peerOnline == true) {
+          pendingPairing = null; // the phone scanned the PC's QR
+          unawaited(store.setPairing(uid, link!.pairing.withPeer(link!.peerName).toJson()));
+        }
+        notifyListeners();
+      },
+      onMessage: _onLinkMessage,
+    );
+    link = l;
+    notifyListeners();
+    await l.start();
+  }
+
+  /// PC: make a new QR and wait for the phone.
+  Future<Pairing> newPairingQr() async {
+    final p = Pairing.create();
+    pendingPairing = p;
+    await store.setPairing(uid, p.toJson());
+    await _connectLink(p);
+    return p;
+  }
+
+  /// Phone: scanned the PC's QR.
+  Future<bool> pairFromQr(String raw) async {
+    final p = Pairing.fromQr(raw);
+    if (p == null) return false;
+    await link?.stop();
+    await store.setPairing(uid, p.toJson());
+    await _connectLink(p);
+    return true;
+  }
+
+  Future<void> unpair() async {
+    await link?.stop();
+    link = null;
+    pendingPairing = null;
+    await store.setPairing(uid, null);
+    notifyListeners();
+  }
+
+  Future<void> _onLinkMessage(Map<String, dynamic> m) async {
+    if (m['type'] != 'cmd') return;
+    final r = BrainReply(action: (m['action'] ?? 'none').toString(), arg: (m['arg'] ?? '').toString(),
+        text: (m['text'] ?? '').toString());
+    status = t('remote_cmd', vars: {'dev': t(DeviceLink.thisDevice == 'pc' ? 'dev_phone' : 'dev_pc')});
+    notifyListeners();
+    await runAction(r);
   }
 
   // ---------- incoming calls / messages (Android) ----------
