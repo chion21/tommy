@@ -16,6 +16,7 @@ String buildSystemPrompt({
   required String platform, // android | windows
   required DateTime now,
   String linkedDevice = '', // '' | 'pc online' | 'pc offline' | 'phone online' | 'phone offline'
+  List<String> pastPoints = const [], // bullet-point summaries of earlier conversations
 }) {
   final who = userName.isEmpty ? 'the user' : userName;
   final address = callMe.isNotEmpty ? callMe : (userName.isNotEmpty ? userName : '');
@@ -78,6 +79,10 @@ ACTIONS (set "action" and "arg"; otherwise action="none"):
 - call: arg = phone number (digits) if they gave one.
 - whatsapp: arg = phone number if known (else ""), text = the message to send.
 - answer_call / reject_call: only when there is an incoming call event and they told you what to do.
+- recall: they ask about something from an earlier conversation that is NOT in the summaries below or the recent
+  turns (e.g. "সেদিন রিয়ার ব্যাপারে কী বলেছিলাম?"). Put good search words in arg (names, topics, both Bangla and English
+  if useful) and a short reply like "দাঁড়াও, মনে করে দেখি…". You will then get [Recall results] and must answer from them.
+  If [Recall results] are given, answer from them honestly; if nothing relevant was found, say you don't remember it.
 - stop: they want you to stop listening / be quiet.
 - "on": which device should do the action — "here" (this device, default), "pc" or "phone". Use "pc"/"phone" when they
   say so (e.g. "পিসিতে ইউটিউব চালাও" from the phone → on="pc").
@@ -91,6 +96,9 @@ Current time: ${now.toIso8601String().substring(0, 16)}. Device: $platform.
 
 WHAT YOU KNOW ABOUT $who:
 $mem
+
+SUMMARIES OF EARLIER CONVERSATIONS (most recent last; you remember these):
+${pastPoints.isEmpty ? '- (none yet)' : pastPoints.map((p) => '- $p').join('\n')}
 ''';
 }
 

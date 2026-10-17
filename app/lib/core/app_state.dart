@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'actions.dart';
+import 'archive.dart';
 import 'auth.dart';
 import 'brain.dart';
 import 'gemini.dart';
@@ -72,6 +73,9 @@ class AppState extends ChangeNotifier {
   String? _pendingEvent; // incoming call/message waiting for the person's decision
   StreamSubscription? _eventsSub;
   DeviceLink? link;
+  ChatArchive? archive;
+  List<String> pastPoints = []; // summaries of earlier conversations (in every prompt)
+  bool _summarising = false;
   Pairing? pendingPairing; // PC: QR being shown, waiting for the phone
   final Map<String, DateTime> _recentEvents = {};
 
@@ -121,6 +125,8 @@ class AppState extends ChangeNotifier {
     }
     final mem = await store.readJson(uid, 'memory.json');
     memories = ((mem['items'] as List?) ?? []).cast<Map<String, dynamic>>();
+    archive = ChatArchive(store, uid);
+    pastPoints = await archive!.recentPoints();
     final hist = await store.readJson(uid, 'chat.json');
     chat = ((hist['items'] as List?) ?? []).map((e) => Map<String, String>.from(e as Map)).toList();
     final key = await store.geminiKey(uid) ?? '';
@@ -130,6 +136,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     _startEvents();
     unawaited(_startLink());
+    if (geminiActive) unawaited(summariseFinished()); // points for conversations from earlier days
     if (geminiActive && profile['hands_free'] == true) unawaited(startLoop());
     if (geminiActive) {
       if (await checkGeminiKey(key) == KeyCheck.invalid) {
@@ -163,6 +170,8 @@ class AppState extends ChangeNotifier {
     profile = Map.of(_defaults);
     memories = [];
     chat = [];
+    archive = null;
+    pastPoints = [];
     geminiActive = false;
     _brain = null;
     voice = VoiceState.idle;
@@ -260,6 +269,7 @@ class AppState extends ChangeNotifier {
         platform: Platform.isAndroid ? 'android' : 'windows',
         now: DateTime.now(),
         linkedDevice: link == null ? '' : '${link!.peer} ${peerOnline ? 'online' : 'offline'}',
+        pastPoints: pastPoints,
       );
 
   /// Mic button: if the always-listening loop is running, it stops/starts it; otherwise listens once.
@@ -348,13 +358,29 @@ class AppState extends ChangeNotifier {
     try {
       _setVoice(VoiceState.thinking, t('thinking'));
       final event = _pendingEvent;
-      final r = await brain.think(
+      var r = await brain.think(
         system: _system(),
         history: chat,
         wav: wav,
         typed: typed,
         event: event,
       );
+      if (r.action == 'recall' && !r.ignore) {
+        // look it up in all earlier conversations, then let the brain answer from what was found
+        final pre = r.reply.isNotEmpty ? _say(r.reply) : Future<void>.value();
+        final found = await archive?.search('${r.arg} ${r.heard}') ?? const <String>[];
+        final heard = r.heard;
+        r = await brain.think(
+          system: _system(),
+          history: chat,
+          typed: heard.isNotEmpty ? heard : (typed ?? ''),
+          event: '[Recall results for "${r.arg}"]\n${found.isEmpty ? '(nothing found)' : found.join('\n')}',
+        );
+        if (r.heard.isEmpty) r = BrainReply(heard: heard, reply: r.reply, action: r.action == 'recall' ? 'none' : r.action,
+            arg: r.arg, text: r.text, remember: r.remember, on: r.on);
+        if (r.action == 'recall') r = BrainReply(heard: r.heard, reply: r.reply, remember: r.remember);
+        await pre; // finish "let me remember…" before the answer
+      }
       if (r.ignore || (r.reply.isEmpty && r.action == 'none')) {
         _setVoice(handsFree ? VoiceState.listening : VoiceState.idle, handsFree ? t('idle') : '');
         return;
@@ -367,6 +393,8 @@ class AppState extends ChangeNotifier {
       ];
       if (chat.length > 60) chat = chat.sublist(chat.length - 60);
       unawaited(store.writeJson(uid, 'chat.json', {'items': chat}));
+      await archive?.add('user', r.heard.isNotEmpty ? r.heard : (typed ?? ''));
+      await archive?.add('model', r.reply);
       if (r.remember.trim().isNotEmpty) {
         try {
           await addMemory(r.remember, kind: 'personal');
@@ -389,7 +417,43 @@ class AppState extends ChangeNotifier {
       _setVoice(handsFree ? VoiceState.listening : VoiceState.idle, '');
     } finally {
       _busy = false;
+      unawaited(summariseFinished());
     }
+  }
+
+  /// Turns finished conversations into bullet points (runs quietly in the background, one at a time).
+  Future<void> summariseFinished({bool includeCurrent = false}) async {
+    final a = archive;
+    final brain = _brain;
+    if (a == null || brain == null || _summarising) return;
+    _summarising = true;
+    try {
+      for (var i = 0; i < 5; i++) {
+        final next = await a.nextToSummarise(includeCurrent: includeCurrent);
+        if (next == null) break;
+        final (chunk, until) = next;
+        final transcript = chunk
+            .map((t) => '${(t['ts'] as String).substring(0, 16).replaceFirst('T', ' ')} '
+                '${t['role'] == 'user' ? (userName.isEmpty ? 'Person' : userName) : name}: ${t['text']}')
+            .join('\n');
+        final points = (await brain.summarise(transcript)).where((p) => !isSensitive(p)).toList();
+        await a.addSummary(chunk, until, points);
+      }
+      pastPoints = await a.recentPoints();
+      notifyListeners();
+    } catch (_) {
+      // try again after the next conversation
+    } finally {
+      _summarising = false;
+    }
+  }
+
+  Future<void> clearHistory() async {
+    await archive?.deleteAll();
+    chat = [];
+    pastPoints = [];
+    await store.writeJson(uid, 'chat.json', {'items': chat});
+    notifyListeners();
   }
 
   Future<void> _say(String text) async {

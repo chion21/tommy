@@ -92,7 +92,7 @@ class Brain {
       'reply': {'type': 'STRING'},
       'action': {
         'type': 'STRING',
-        'enum': ['none', 'open_url', 'youtube', 'web_search', 'open_app', 'call', 'whatsapp', 'answer_call', 'reject_call', 'stop'],
+        'enum': ['none', 'open_url', 'youtube', 'web_search', 'open_app', 'call', 'whatsapp', 'answer_call', 'reject_call', 'recall', 'stop'],
       },
       'arg': {'type': 'STRING'},
       'text': {'type': 'STRING'},
@@ -156,6 +156,40 @@ class Brain {
       remember: (j['remember'] ?? '').toString(),
       on: (j['on'] ?? 'here').toString(),
     );
+  }
+
+  /// Turns one finished conversation into short bullet points worth remembering (same language as the talk).
+  Future<List<String>> summarise(String transcript) async {
+    await _pickModels();
+    final data = await _call('models/$_chatModel:generateContent', {
+      'contents': [
+        {
+          'parts': [
+            {
+              'text': 'Summarise this conversation between a person and their assistant as 1-6 short bullet points '
+                  'worth remembering later: what they talked about, decisions, plans, promises, names, dates, feelings. '
+                  'Write in the language the person used (Bangla stays Bangla). Skip greetings and small talk. '
+                  'Never include passwords, PINs, OTPs or card/bank numbers. Return a JSON array of strings.\n\n$transcript'
+            }
+          ]
+        }
+      ],
+      'generationConfig': {
+        'temperature': 0.3,
+        'responseMimeType': 'application/json',
+        'responseSchema': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+        if (_chatModel!.startsWith('gemini-2.5')) 'thinkingConfig': {'thinkingBudget': 0},
+      },
+    });
+    final cands = (data['candidates'] as List?) ?? const [];
+    if (cands.isEmpty) return [];
+    final parts = (((cands.first as Map)['content'] as Map?)?['parts'] as List?) ?? const [];
+    final text = parts.map((p) => ((p as Map)['text'] ?? '').toString()).join();
+    try {
+      return (jsonDecode(text) as List).map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   /// Natural voice from Gemini TTS → WAV bytes, or null (caller then uses the device voice).

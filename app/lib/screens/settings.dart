@@ -12,6 +12,7 @@ import '../widgets/character_art.dart';
 import 'characters.dart';
 import 'link_screens.dart';
 import 'memory.dart';
+import 'summaries.dart';
 
 class SettingsScreen extends StatefulWidget {
   final AppState app;
@@ -356,6 +357,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ---------- memory & account ----------
           _section(app.t('account'), [
+            ListTile(
+              leading: const Icon(Icons.history_edu),
+              title: Text(app.t('history_title')),
+              subtitle: Text(app.t('history_sub')),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SummariesScreen(app: app))),
+            ),
             ListTile(
               leading: const Icon(Icons.psychology_alt_outlined),
               title: Text(app.t('memory')),
