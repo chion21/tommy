@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
-import '../core/config.dart';
 import '../widgets/orb.dart';
 
-/// Email/password, Google, forgot password, or offline profile — no server address needed.
+/// Phone number or email + password (works without a server), Google (coming soon), forgot password.
 class LoginScreen extends StatefulWidget {
   final AppState app;
   const LoginScreen({super.key, required this.app});
@@ -14,7 +13,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _email = TextEditingController();
+  final _email = TextEditingController(); // phone number or email
   final _pass = TextEditingController();
   final _name = TextEditingController();
   bool _register = false, _busy = false;
@@ -59,21 +58,6 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  Future<void> _offline() async {
-    final app = widget.app;
-    final ctrl = TextEditingController(text: _name.text);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(app.t('your_name')),
-        content: TextField(controller: ctrl, autofocus: true),
-        actions: [FilledButton(onPressed: () => Navigator.pop(c, ctrl.text), child: Text(app.t('save')))],
-      ),
-    );
-    if (name == null) return;
-    await _run(() => app.loginOffline(name));
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = widget.app;
@@ -88,8 +72,8 @@ class _LoginScreenState extends State<LoginScreen> {
               Center(child: CrystalOrb(color: c, state: VoiceState.idle, size: 150)),
               const SizedBox(height: 8),
               if (_register) TextField(controller: _name, decoration: InputDecoration(labelText: app.t('your_name'))),
-              TextField(controller: _email, decoration: InputDecoration(labelText: app.t('email')),
-                  keyboardType: TextInputType.emailAddress, autofillHints: const [AutofillHints.email]),
+              TextField(controller: _email, decoration: InputDecoration(labelText: app.t('phone_or_email')),
+                  keyboardType: TextInputType.emailAddress),
               TextField(controller: _pass, decoration: InputDecoration(labelText: app.t('password')), obscureText: true),
               if (!_register)
                 Align(
@@ -122,11 +106,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: _busy ? null : () => _run(app.loginGoogle),
                 icon: const Text('G', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
                 label: Text(app.t('google')),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: _busy ? null : _offline,
-                child: Text(app.t('offline'), style: TextStyle(color: AppConfig.accountsEnabled ? Colors.white54 : c)),
               ),
               if (_busy) const Padding(padding: EdgeInsets.all(8), child: Center(child: CircularProgressIndicator())),
             ]),

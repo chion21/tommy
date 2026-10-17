@@ -19,7 +19,6 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int _tab = 0;
 
-  /// Demo cycle until the Gemini Live voice connection is added (next step).
   Future<void> _micPressed() async {
     final app = widget.app;
     if (!app.geminiActive) {
@@ -27,16 +26,7 @@ class _ShellState extends State<Shell> {
       setState(() => _tab = 3);
       return;
     }
-    if (app.voice != VoiceState.idle) {
-      app.setVoice(VoiceState.idle);
-      return;
-    }
-    for (final s in [VoiceState.listening, VoiceState.thinking, VoiceState.speaking]) {
-      app.setVoice(s);
-      await Future.delayed(const Duration(milliseconds: 1600));
-      if (!mounted) return;
-    }
-    app.setVoice(VoiceState.idle);
+    await app.micPressed();
   }
 
   @override
@@ -53,7 +43,7 @@ class _ShellState extends State<Shell> {
       final wide = box.maxWidth >= 900;
       final pages = [
         _Home(app: app, wide: box.maxWidth > box.maxHeight),
-        _Placeholder(text: app.t('coming_soon'), icon: Icons.chat_bubble_outline),
+        _Chat(app: app),
         _Placeholder(text: app.t('coming_soon'), icon: Icons.bolt),
         SettingsScreen(app: app),
       ];
@@ -111,24 +101,98 @@ class _Home extends StatelessWidget {
                 const Spacer(),
                 Center(child: CrystalOrb(color: th.primary, state: app.voice)),
                 const SizedBox(height: 8),
-                Center(child: Text(status, style: TextStyle(color: th.primary, fontWeight: FontWeight.w600))),
+                Center(
+                  child: Text(app.status.isNotEmpty ? app.status : status,
+                      textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: th.primary, fontWeight: FontWeight.w600)),
+                ),
+                if (app.listeningLoop)
+                  Center(child: Padding(padding: const EdgeInsets.only(top: 4),
+                      child: Text('● ${app.t('listening_on')}', style: const TextStyle(fontSize: 11, color: Colors.greenAccent)))),
                 const SizedBox(height: 8),
                 Waveform(color: th.primary, active: app.voice == VoiceState.speaking || app.voice == VoiceState.listening),
                 const Spacer(),
-                TextField(
-                  decoration: InputDecoration(
-                    hintText: app.t('ask'),
-                    filled: true,
-                    fillColor: Colors.black.withValues(alpha: 0.45),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
-                    suffixIcon: Icon(Icons.send_rounded, color: th.primary),
-                  ),
-                ),
+                _AskBox(app: app),
               ]),
             ),
           ),
         ),
       ]),
+    );
+  }
+}
+
+class _AskBox extends StatefulWidget {
+  final AppState app;
+  const _AskBox({required this.app});
+  @override
+  State<_AskBox> createState() => _AskBoxState();
+}
+
+class _AskBoxState extends State<_AskBox> {
+  final _c = TextEditingController();
+  void _send() {
+    final t = _c.text;
+    _c.clear();
+    widget.app.sendText(t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.app;
+    return TextField(
+      controller: _c,
+      onSubmitted: (_) => _send(),
+      textInputAction: TextInputAction.send,
+      decoration: InputDecoration(
+        hintText: app.t('ask'),
+        filled: true,
+        fillColor: Colors.black.withValues(alpha: 0.45),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
+        suffixIcon: IconButton(icon: Icon(Icons.send_rounded, color: app.theme.primary), onPressed: _send),
+      ),
+    );
+  }
+}
+
+/// Conversation history (what Tommy heard and answered).
+class _Chat extends StatelessWidget {
+  final AppState app;
+  const _Chat({required this.app});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = app.theme.primary;
+    if (app.chat.isEmpty) {
+      return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(app.t('chat_empty'), textAlign: TextAlign.center)));
+    }
+    final items = app.chat.reversed.toList();
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView.builder(
+          reverse: true,
+          padding: const EdgeInsets.all(12),
+          itemCount: items.length,
+          itemBuilder: (_, i) {
+            final m = items[i];
+            final me = m['role'] == 'user';
+            return Align(
+              alignment: me ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                constraints: const BoxConstraints(maxWidth: 520),
+                decoration: BoxDecoration(
+                  color: me ? c.withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(m['text'] ?? ''),
+              ),
+            );
+          },
+        ),
+      ),
     );
   }
 }
@@ -152,7 +216,14 @@ class _MicButton extends StatelessWidget {
           border: Border.all(color: c, width: 2),
           boxShadow: [BoxShadow(color: c.withValues(alpha: 0.6), blurRadius: 16)],
         ),
-        child: Icon(app.voice == VoiceState.idle ? Icons.graphic_eq : Icons.stop_rounded, color: c, size: size * 0.5),
+        child: Icon(
+            app.voice == VoiceState.speaking
+                ? Icons.stop_rounded
+                : app.listeningLoop
+                    ? Icons.hearing
+                    : Icons.mic_rounded,
+            color: c,
+            size: size * 0.5),
       ),
     );
   }

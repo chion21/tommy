@@ -30,9 +30,38 @@ manifest = root / "android/app/src/main/AndroidManifest.xml"
 perms = ('<uses-permission android:name="android.permission.INTERNET"/>\n'
          '    <uses-permission android:name="android.permission.RECORD_AUDIO"/>\n'
          '    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>\n'
-         '    <queries><intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent></queries>\n'
+         '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n'
+         '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>\n'
+         '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
+         '    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS"/>\n'
+         '    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n'
+         '    <queries>\n'
+         '        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent>\n'
+         '        <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>\n'
+         '        <intent><action android:name="android.intent.action.DIAL"/></intent>\n'
+         '        <intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>\n'
+         '    </queries>\n'
          '    <application')
+services = ('        <service android:name=".KeepAliveService" android:exported="false"'
+            ' android:foregroundServiceType="microphone"/>\n'
+            '        <service android:name=".NotifyListener" android:label="Tommy" android:exported="true"'
+            ' android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">\n'
+            '            <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>\n'
+            '        </service>\n'
+            '    </application>')
 patch(manifest, "<application", perms, "android permissions")
+patch(manifest, "</application>", services, "android services")
+
+# our native Kotlin code (background listening, calls & notifications, opening apps)
+import shutil
+kt_dir = root / "android/app/src/main/kotlin/com/tommyai/tommy"
+if kt_dir.exists():
+    for f in (root / "android_native").glob("*.kt"):
+        shutil.copy(f, kt_dir / f.name)
+        print(f"ok   copied {f.name}")
+else:
+    print(f"FAIL kotlin folder not found: {kt_dir}")
+    ok = False
 if manifest.exists():
     s = manifest.read_text(encoding="utf-8")
     s2 = re.sub(r'android:label="[^"]*"', 'android:label="Tommy"', s, count=1)

@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/app_state.dart';
 import '../core/gemini.dart';
+import '../core/native.dart';
+import '../core/persona.dart';
 import '../core/themes.dart';
 import '../widgets/character_art.dart';
 import 'characters.dart';
@@ -18,6 +22,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _keyCtrl = TextEditingController();
+  final _licCtrl = TextEditingController();
   bool _checking = false;
 
   AppState get app => widget.app;
@@ -123,6 +128,111 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ]),
             ),
           ),
+
+          // ---------- licence / activation (from v0.1) ----------
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.workspace_premium),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(app.t('license'), style: const TextStyle(fontWeight: FontWeight.w700))),
+                ]),
+                const SizedBox(height: 6),
+                Text((p['license_key'] as String).isEmpty ? app.t('license_none') : p['license_key'] as String,
+                    style: const TextStyle(fontFamily: 'monospace')),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _licCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(hintText: 'TOMMY-XXXX-XXXX-XXXX', border: OutlineInputBorder()),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () async {
+                      try {
+                        await app.saveLicense(_licCtrl.text);
+                        _licCtrl.clear();
+                        _toast(app.t('license_saved'));
+                      } catch (e) {
+                        _toast(app.err(e));
+                      }
+                    },
+                    child: Text(app.t('activate')),
+                  ),
+                ]),
+              ]),
+            ),
+          ),
+
+          // ---------- how Tommy behaves ----------
+          _section(app.t('role'), [
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final r in personas)
+                ChoiceChip(
+                  label: Text(app.t(r == 'partner' ? (app.voiceFemale ? 'persona_partner_f' : 'persona_partner_m') : 'persona_$r')),
+                  selected: p['persona'] == r,
+                  onSelected: (_) async {
+                    if (r == 'partner' && p['persona'] != 'partner') {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (c) => AlertDialog(
+                          content: Text(app.t('partner_confirm')),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(app.t('cancel'))),
+                            FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(app.t('activate'))),
+                          ],
+                        ),
+                      );
+                      if (ok != true) return;
+                    }
+                    await app.setPref('persona', r);
+                  },
+                ),
+            ]),
+            ListTile(
+              leading: const Icon(Icons.record_voice_over_outlined),
+              title: Text(app.t('call_me')),
+              subtitle: Text(p['call_me'] as String),
+              onTap: () async {
+                final v = await _ask(app.t('call_me'), p['call_me'] as String, maxLength: 30);
+                if (v != null) await app.setPref('call_me', v);
+              },
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.hearing),
+              title: Text(app.t('hands_free')),
+              subtitle: Text(app.t('hands_free_hint')),
+              value: p['hands_free'] == true,
+              onChanged: (v) => app.setPref('hands_free', v),
+            ),
+            if (Platform.isAndroid) ...[
+              SwitchListTile(
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: Text(app.t('announce')),
+                subtitle: Text(app.t('announce_hint')),
+                value: p['announce'] == true,
+                onChanged: (v) => app.setPref('announce', v),
+              ),
+              FutureBuilder<bool>(
+                future: Native.notificationAccess(),
+                builder: (_, snap) => snap.data == true
+                    ? ListTile(leading: const Icon(Icons.check_circle, color: Colors.greenAccent), title: Text(app.t('notif_ok')))
+                    : ListTile(
+                        leading: const Icon(Icons.lock_open),
+                        title: Text(app.t('notif_access')),
+                        onTap: () async {
+                          await Native.openNotificationSettings();
+                          if (mounted) setState(() {});
+                        },
+                      ),
+              ),
+            ],
+          ]),
 
           // ---------- profile ----------
           _section(app.t('profile'), [

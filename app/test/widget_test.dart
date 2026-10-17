@@ -1,5 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:typed_data';
+
 import 'package:tommy/core/app_state.dart';
+import 'package:tommy/core/brain.dart';
+import 'package:tommy/core/persona.dart';
 import 'package:tommy/core/gemini.dart';
 import 'package:tommy/core/strings.dart';
 import 'package:tommy/core/themes.dart';
@@ -27,5 +31,26 @@ void main() {
   test('obviously wrong keys are rejected without a network call', () async {
     expect(await checkGeminiKey('abc'), KeyCheck.invalid);
     expect(maskKey('AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ'), startsWith('AIza'));
+  });
+
+  test('persona prompts carry name, role and boundaries', () {
+    for (final p in personas) {
+      final s = buildSystemPrompt(name: 'রিয়া', female: true, persona: p, userName: 'রাকিব', callMe: 'স্যার',
+          speechLanguage: 'auto', memories: const ['likes tea'], handsFree: true, platform: 'android', now: DateTime(2026));
+      expect(s.contains('রিয়া'), isTrue);
+      expect(s.contains('likes tea'), isTrue);
+      if (p == 'partner') expect(s.contains('no sexual or explicit content'), isTrue);
+    }
+  });
+
+  test('wav header is valid', () {
+    final w = wavFromPcm16(Uint8List(48000), 24000);
+    expect(String.fromCharCodes(w.sublist(0, 4)), 'RIFF');
+    expect(w.length, 48000 + 44);
+  });
+
+  test('licence format', () {
+    expect(licenseFormat.hasMatch('TOMMY-ABCD-EFGH-JKLM'), isTrue);
+    expect(licenseFormat.hasMatch('TOMMY-1234'), isFalse);
   });
 }
