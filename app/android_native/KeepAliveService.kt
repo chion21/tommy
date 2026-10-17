@@ -32,10 +32,16 @@ class KeepAliveService : Service() {
             .setOngoing(true)
             .setContentIntent(open)
             .build()
-        if (Build.VERSION.SDK_INT >= 30) {
-            startForeground(7, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        } else {
-            startForeground(7, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                startForeground(7, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(7, notification)
+            }
+        } catch (e: Exception) {
+            // e.g. microphone permission not granted yet — don't crash, just don't run in background
+            stopSelf()
+            return START_NOT_STICKY
         }
         return START_STICKY
     }

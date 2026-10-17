@@ -30,8 +30,13 @@ class MainActivity : FlutterActivity() {
                         val i = Intent(this, KeepAliveService::class.java)
                             .putExtra("title", call.argument<String>("title") ?: "Tommy")
                             .putExtra("text", call.argument<String>("text") ?: "Listening")
-                        if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
-                        result.success(true)
+                        if (Build.VERSION.SDK_INT >= 23 &&
+                            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                            result.success(false)
+                        } else {
+                            if (Build.VERSION.SDK_INT >= 26) startForegroundService(i) else startService(i)
+                            result.success(true)
+                        }
                     }
                     "stopKeepAlive" -> { stopService(Intent(this, KeepAliveService::class.java)); result.success(true) }
                     "requestPermissions" -> { askPermissions(); result.success(true) }
