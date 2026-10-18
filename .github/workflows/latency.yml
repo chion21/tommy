@@ -1,0 +1,15 @@
+name: live-latency
+# Measures Gemini Live response time (needs the GEMINI_API_KEY secret). Results: run summary → annotations.
+on:
+  push: { paths: ["app/tool/live_latency.py", ".github/workflows/latency.yml"] }
+  workflow_dispatch:
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install websockets numpy
+      - env: { GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}" }
+        run: python app/tool/live_latency.py
