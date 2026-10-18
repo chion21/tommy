@@ -91,7 +91,8 @@ class _QrDialog extends StatelessWidget {
 /// Phone: camera scanner for the PC's QR code.
 class ScanScreen extends StatefulWidget {
   final AppState app;
-  const ScanScreen({super.key, required this.app});
+  final bool login; // true = login page: log in with the PC's account (no password)
+  const ScanScreen({super.key, required this.app, this.login = false});
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -99,6 +100,7 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   bool _handled = false;
+  bool _busy = false;
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_handled) return;
@@ -106,6 +108,24 @@ class _ScanScreenState extends State<ScanScreen> {
       final raw = b.rawValue;
       if (raw == null) continue;
       _handled = true;
+      if (widget.login) {
+        setState(() => _busy = true);
+        try {
+          final ok = await widget.app.loginWithQr(raw);
+          if (!mounted) return;
+          if (ok) {
+            Navigator.pop(context);
+            return;
+          }
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.t('link_bad_qr'))));
+        } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.app.err(e))));
+        }
+        if (mounted) setState(() => _busy = false);
+        await Future.delayed(const Duration(seconds: 2));
+        _handled = false;
+        return;
+      }
       final ok = await widget.app.pairFromQr(raw);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -123,8 +143,22 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.app.t('link_scan'))),
-      body: MobileScanner(onDetect: _onDetect),
+      appBar: AppBar(title: Text(widget.app.t(widget.login ? 'qr_login' : 'link_scan'))),
+      body: Stack(children: [
+        MobileScanner(onDetect: _onDetect),
+        if (widget.login)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 24,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.75), borderRadius: BorderRadius.circular(12)),
+              child: Text(widget.app.t(_busy ? 'qr_login_wait' : 'qr_login_hint'), style: const TextStyle(color: Colors.white)),
+            ),
+          ),
+        if (_busy) const Center(child: CircularProgressIndicator()),
+      ]),
     );
   }
 }

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
 import '../core/auth.dart';
 import '../widgets/orb.dart';
+import 'link_screens.dart';
 
 /// Phone number or email + password (works without a server), Google (coming soon), forgot password.
 class LoginScreen extends StatefulWidget {
@@ -109,6 +112,22 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Center(child: CrystalOrb(color: c, state: VoiceState.idle, size: 150)),
               const SizedBox(height: 8),
+              if (Platform.isAndroid) ...[
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: Text(app.t('qr_login')),
+                  onPressed: _busy
+                      ? null
+                      : () => Navigator.push(context, MaterialPageRoute(builder: (_) => ScanScreen(app: app, login: true))),
+                ),
+                const SizedBox(height: 4),
+                Text(app.t('qr_login_hint'), style: const TextStyle(fontSize: 12, color: Colors.white60)),
+                Row(children: [
+                  const Expanded(child: Divider()),
+                  Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text(app.t('or'))),
+                  const Expanded(child: Divider()),
+                ]),
+              ],
               if (_register) TextField(controller: _name, decoration: InputDecoration(labelText: app.t('your_name'))),
               TextField(controller: _email, decoration: InputDecoration(labelText: app.t('phone_or_email')),
                   keyboardType: TextInputType.emailAddress),

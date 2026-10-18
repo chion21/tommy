@@ -155,6 +155,9 @@ class DeviceLink {
     return true;
   }
 
+  /// Any message (encrypted) to the other device.
+  Future<bool> send(Map<String, dynamic> msg) => _send(msg);
+
   /// Ask the other device to do something (same fields as a brain action).
   Future<bool> sendCommand(String action, String arg, String text) =>
       _send({'type': 'cmd', 'action': action, 'arg': arg, 'text': text});

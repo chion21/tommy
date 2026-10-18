@@ -48,7 +48,8 @@ const _defaults = <String, dynamic>{
   'announce': true, // say incoming calls/messages aloud (Android)
   'license_key': '',
   'light': 'theme', // edge light: theme | a colour | mix (RGB) | off
-  'live_mode': true, // Gemini Live: replies start in ~1 s and tasks run as functions
+  'live_mode': true,
+  'voice_quality': 'sweet', // sweet = native-audio voice (as in v0.6) · fast = quickest model, plainer voice // Gemini Live: replies start in ~1 s and tasks run as functions
 };
 
 const voices = <String, bool>{'aoede': true, 'kore': true, 'leda': true, 'puck': false, 'charon': false}; // true = female
@@ -86,6 +87,7 @@ class AppState extends ChangeNotifier {
   bool _summarising = false;
   Pairing? pendingPairing; // PC: QR being shown, waiting for the phone
   final Map<String, DateTime> _recentEvents = {};
+  DateTime? _qrShownAt; // PC: when the QR was shown (a phone may log in with it for 5 minutes)
 
   // ---- Gemini Live (fast voice) ----
   final _mic = LiveMic();
@@ -241,7 +243,7 @@ class AppState extends ChangeNotifier {
       unawaited(startLoop());
     }
     // a new voice/role/name takes effect from the next live connection
-    if (['persona', 'voice', 'call_me', 'speech_language', 'display_name'].contains(key) && _live != null) {
+    if (['persona', 'voice', 'voice_quality', 'call_me', 'speech_language', 'display_name'].contains(key) && _live != null) {
       unawaited(_live!.close());
       _live = null;
       if (_loopOn) unawaited(_ensureLive());
@@ -474,7 +476,6 @@ class AppState extends ChangeNotifier {
     }
     _setVoice(VoiceState.listening, t('idle'));
     unawaited(_speaker.warmUp());
-    unawaited(_ensureLive()); // connect early so the first answer is fast
     _liveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _liveTick());
     final byPerson = await exit.future;
     _liveTimer?.cancel();
@@ -492,8 +493,13 @@ class AppState extends ChangeNotifier {
 
   void _liveTick() {
     final now = DateTime.now();
-    // keep the connection open (an idle connection costs nothing) so answers start at once
-    if (_loopOn && _useLive && _live?.isOpen != true && _connecting == null) unawaited(_ensureLive());
+    // close an idle connection after a minute (saves the free daily quota); reconnecting takes only ~0.15 s
+    final l = _live;
+    if (l != null && !_sending && !_speaker.speaking && now.difference(l.lastActivity) > const Duration(seconds: 60)) {
+      unawaited(l.close());
+      _live = null;
+      notifyListeners();
+    }
     // button-started conversation (hands-free off) ends after a minute of silence
     if (profile['hands_free'] != true && !_sending && !_speaker.speaking &&
         now.difference(_lastTalk) > const Duration(seconds: 60)) {
@@ -573,7 +579,7 @@ class AppState extends ChangeNotifier {
     if (brain == null || !_loopOn) return false;
     String? model;
     try {
-      model = await brain.liveModel();
+      model = await brain.liveModel(sweet: profile['voice_quality'] != 'fast');
     } catch (e) {
       _liveFailed(e);
       return false;
@@ -1037,6 +1043,7 @@ class AppState extends ChangeNotifier {
 
   /// PC: make a new QR and wait for the phone.
   Future<Pairing> newPairingQr() async {
+    _qrShownAt = DateTime.now();
     final p = Pairing.create();
     pendingPairing = p;
     await store.setPairing(uid, p.toJson());
@@ -1054,6 +1061,44 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// Phone login page: scan the QR shown on the logged-in PC → same account here, no password.
+  Future<bool> loginWithQr(String raw) async {
+    final p = Pairing.fromQr(raw);
+    if (p == null) return false;
+    final got = Completer<Map<String, dynamic>>();
+    final temp = DeviceLink(
+      me: DeviceLink.thisDevice,
+      myName: 'Phone',
+      pairing: p,
+      onChange: () {},
+      onMessage: (m) {
+        if (m['type'] == 'login_bundle' && !got.isCompleted) got.complete(m);
+      },
+    );
+    await temp.start();
+    final asker = Timer.periodic(const Duration(seconds: 2), (_) => temp.send({'type': 'login_req'}));
+    unawaited(temp.send({'type': 'login_req'}));
+    Map<String, dynamic>? b;
+    try {
+      b = await got.future.timeout(const Duration(seconds: 40));
+    } catch (_) {
+      b = null;
+    }
+    asker.cancel();
+    await temp.stop();
+    if (b == null) throw AppError('QR_LOGIN_FAILED');
+    final s0 = Session.fromJson(Map<String, dynamic>.from(b['session'] as Map));
+    final s = Session(uid: s0.uid, email: s0.email, displayName: s0.displayName, provider: 'qr');
+    await store.writeJson(s.uid, 'profile.json', Map<String, dynamic>.from(b['profile'] as Map? ?? {}));
+    final mem = (b['memories'] as List?) ?? const [];
+    if (mem.isNotEmpty) await store.writeJson(s.uid, 'memory.json', {'items': mem});
+    final key = (b['gemini'] ?? '').toString();
+    if (key.isNotEmpty) await store.setGeminiKey(s.uid, key);
+    await store.setPairing(s.uid, p.withPeer(p.peerName).toJson());
+    await _start(s);
+    return true;
+  }
+
   Future<void> unpair() async {
     await link?.stop();
     link = null;
@@ -1063,6 +1108,19 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _onLinkMessage(Map<String, dynamic> m) async {
+    if (m['type'] == 'login_req') {
+      // the phone scanned this PC's QR on its login page → send it this account (only right after showing the QR)
+      final shown = _qrShownAt;
+      if (session == null || shown == null || DateTime.now().difference(shown) > const Duration(minutes: 5)) return;
+      await link?.send({
+        'type': 'login_bundle',
+        'session': session!.toJson(),
+        'profile': profile,
+        'memories': memories,
+        'gemini': await store.geminiKey(uid) ?? '',
+      });
+      return;
+    }
     if (m['type'] != 'cmd') return;
     if (m['text'] == '__json') {
       Map<String, dynamic> args = {};

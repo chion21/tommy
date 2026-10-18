@@ -35,6 +35,13 @@ const preferredLive = <String>[
   'gemini-2.5-flash-native-audio-latest',
 ];
 
+/// The sweet native-audio voice the person liked (v0.6 used "-latest").
+const sweetLive = <String>[
+  'gemini-2.5-flash-native-audio-latest',
+  'gemini-2.5-flash-native-audio-preview-09-2025',
+  'gemini-2.5-flash-native-audio-preview-12-2025',
+];
+
 /// Talks to Google Gemini with the person's own AI Studio key. Picks the best available models automatically.
 class Brain {
   static const _api = 'https://generativelanguage.googleapis.com/v1beta';
@@ -43,6 +50,7 @@ class Brain {
   String? _ttsModel;
   String? _liveModel;
   List<String> _ttsModels = [];
+  List<String> _liveModels = [];
   bool _ttsBroken = false;
   Brain(this.key);
 
@@ -84,6 +92,7 @@ class Brain {
         if (pa != pb) return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
         return _rank(a).compareTo(_rank(b));
       });
+    _liveModels = okLive;
     _liveModel = okLive.isEmpty ? null : okLive.first;
     bool bad(String n) => ['image', 'tts', 'live', 'embedding', 'audio', 'robotics', 'computer', 'learnlm', 'gemma', 'aqa']
         .any(n.contains);
@@ -114,8 +123,17 @@ class Brain {
   String get chatModel => _chatModel ?? '?';
 
   /// Gemini Live model for fast two-way voice, or null if this key has none.
-  Future<String?> liveModel() async {
+  /// [sweet] = the "native audio" voice (the sweet, emotional one from v0.6, ~1.5 s);
+  /// otherwise the fastest model (~0.8 s, plainer voice).
+  Future<String?> liveModel({bool sweet = true}) async {
     await _pickModels();
+    if (sweet) {
+      for (final m in sweetLive) {
+        if (_liveModels.contains(m)) return m;
+      }
+      final native = _liveModels.where((n) => n.contains('native-audio')).toList();
+      if (native.isNotEmpty) return native.first;
+    }
     return _liveModel;
   }
 

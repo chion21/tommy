@@ -228,6 +228,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: p['live_mode'] == true,
               onChanged: (v) => app.setPref('live_mode', v),
             ),
+            if (p['live_mode'] == true)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final q in ['sweet', 'fast'])
+                    ChoiceChip(
+                      label: Text(app.t('vq_$q')),
+                      selected: (p['voice_quality'] ?? 'sweet') == q,
+                      onSelected: (_) => app.setPref('voice_quality', q),
+                    ),
+                ]),
+              ),
             SwitchListTile(
               secondary: const Icon(Icons.hearing),
               title: Text(app.t('hands_free')),
