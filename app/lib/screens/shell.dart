@@ -48,7 +48,7 @@ class _ShellState extends State<Shell> {
         _Placeholder(text: app.t('coming_soon'), icon: Icons.bolt),
         SettingsScreen(app: app),
       ];
-      final body = EdgeGlow(colors: app.theme.glow, state: app.voice, child: pages[_tab]);
+      final body = EdgeGlow(colors: app.theme.glow, state: app.voice, mode: app.profile['light'] as String, child: pages[_tab]);
       if (wide) {
         return Scaffold(
           body: SafeArea(

@@ -25,6 +25,16 @@ class BrainError implements Exception {
   String toString() => '$code $detail';
 }
 
+/// Fastest Live voice models first (measured by tool/live_latency.py; see docs/live_latency.txt).
+/// Measured 18 Oct 2026 (end of speech → first sound): gemini-3.8-live 0.6–1.0 s, 3.1-flash-live 0.7–1.4 s,
+/// 2.5 native-audio 1.4–3.6 s.
+const preferredLive = <String>[
+  'gemini-3.8-live',
+  'gemini-3.1-flash-live-preview',
+  'gemini-2.5-flash-native-audio-preview-09-2025',
+  'gemini-2.5-flash-native-audio-latest',
+];
+
 /// Talks to Google Gemini with the person's own AI Studio key. Picks the best available models automatically.
 class Brain {
   static const _api = 'https://generativelanguage.googleapis.com/v1beta';
@@ -32,6 +42,7 @@ class Brain {
   String? _chatModel;
   String? _ttsModel;
   String? _liveModel;
+  List<String> _ttsModels = [];
   bool _ttsBroken = false;
   Brain(this.key);
 
@@ -66,21 +77,27 @@ class Brain {
       if (methods.contains('bidiGenerateContent')) live.add(n);
     }
     // real-time voice model: prefer "native audio" (most human voice), newest first
-    live.sort((a, b) {
-      final na = a.contains('native-audio') ? 0 : 1, nb = b.contains('native-audio') ? 0 : 1;
-      if (na != nb) return na - nb;
-      return _rank(a).compareTo(_rank(b));
-    });
-    final okLive = live.where((n) => !n.contains('image') && !n.contains('tts')).toList();
+    const notChat = ['image', 'tts', 'transcribe', 'translate', 'robotics', 'thinking'];
+    final okLive = live.where((n) => !notChat.any(n.contains)).toList()
+      ..sort((a, b) {
+        final pa = preferredLive.indexOf(a), pb = preferredLive.indexOf(b);
+        if (pa != pb) return (pa < 0 ? 99 : pa) - (pb < 0 ? 99 : pb);
+        return _rank(a).compareTo(_rank(b));
+      });
     _liveModel = okLive.isEmpty ? null : okLive.first;
     bool bad(String n) => ['image', 'tts', 'live', 'embedding', 'audio', 'robotics', 'computer', 'learnlm', 'gemma', 'aqa']
         .any(n.contains);
     final chat = names.where((n) => n.contains('flash') && !bad(n)).toList()..sort((a, b) => _rank(a).compareTo(_rank(b)));
     if (chat.isEmpty) throw BrainError('NO_MODEL', names.join(','));
     _chatModel = chat.first;
-    final tts = names.where((n) => n.contains('tts')).toList()
-      ..sort((a, b) => (a.contains('flash') ? 0 : 1).compareTo(b.contains('flash') ? 0 : 1));
-    _ttsModel = tts.isEmpty ? null : tts.first;
+    // newest flash TTS first (old preview TTS models can stop working)
+    _ttsModels = names.where((n) => n.contains('tts')).toList()
+      ..sort((a, b) {
+        final fa = a.contains('flash') ? 0 : 1, fb = b.contains('flash') ? 0 : 1;
+        if (fa != fb) return fa - fb;
+        return _rank(a).compareTo(_rank(b));
+      });
+    _ttsModel = _ttsModels.isEmpty ? null : _ttsModels.first;
   }
 
   /// Newer + non-lite + non-preview first.
@@ -100,6 +117,66 @@ class Brain {
   Future<String?> liveModel() async {
     await _pickModels();
     return _liveModel;
+  }
+
+  /// Looks at a screenshot and answers a question about it (what windows/buttons are there, what went wrong…).
+  Future<String> vision(Uint8List jpeg, String question) async {
+    await _pickModels();
+    final data = await _call('models/$_chatModel:generateContent', {
+      'contents': [
+        {
+          'parts': [
+            {'inlineData': {'mimeType': 'image/jpeg', 'data': base64Encode(jpeg)}},
+            {'text': 'This is a screenshot of the person\'s computer screen. $question\n'
+                'Answer briefly and concretely: open windows/apps, visible buttons/fields, any error text.'}
+          ]
+        }
+      ],
+      'generationConfig': {
+        'temperature': 0.2,
+        if (_chatModel!.startsWith('gemini-2.5')) 'thinkingConfig': {'thinkingBudget': 0},
+      },
+    }, timeout: const Duration(seconds: 40));
+    final cands = (data['candidates'] as List?) ?? const [];
+    if (cands.isEmpty) return '';
+    final parts = (((cands.first as Map)['content'] as Map?)?['parts'] as List?) ?? const [];
+    return parts.map((p) => ((p as Map)['text'] ?? '').toString()).join().trim();
+  }
+
+  /// Finds [target] on a screenshot → centre point in 0..1000 coordinates (x, y), or null.
+  Future<(int, int)?> locate(Uint8List jpeg, String target) async {
+    await _pickModels();
+    final data = await _call('models/$_chatModel:generateContent', {
+      'contents': [
+        {
+          'parts': [
+            {'inlineData': {'mimeType': 'image/jpeg', 'data': base64Encode(jpeg)}},
+            {'text': 'Find this on the screenshot: "$target". Return its centre point as x and y in 0-1000 '
+                'normalised coordinates (0,0 = top-left, 1000,1000 = bottom-right). found=false if it is not visible.'}
+          ]
+        }
+      ],
+      'generationConfig': {
+        'temperature': 0,
+        'responseMimeType': 'application/json',
+        'responseSchema': {
+          'type': 'OBJECT',
+          'properties': {'found': {'type': 'BOOLEAN'}, 'x': {'type': 'INTEGER'}, 'y': {'type': 'INTEGER'}},
+          'required': ['found'],
+        },
+        if (_chatModel!.startsWith('gemini-2.5')) 'thinkingConfig': {'thinkingBudget': 0},
+      },
+    }, timeout: const Duration(seconds: 40));
+    final cands = (data['candidates'] as List?) ?? const [];
+    if (cands.isEmpty) return null;
+    final parts = (((cands.first as Map)['content'] as Map?)?['parts'] as List?) ?? const [];
+    try {
+      final j = jsonDecode(parts.map((p) => ((p as Map)['text'] ?? '').toString()).join()) as Map;
+      if (j['found'] != true) return null;
+      return ((j['x'] as num).round(), (j['y'] as num).round());
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Looks things up on the web (Google Search) and answers as neat bullet points.
@@ -283,8 +360,13 @@ class Brain {
         }
       }
     } on BrainError catch (e) {
-      if (e.code == 'QUOTA' || e.code == 'FAILED') _ttsBroken = e.code == 'FAILED'; // quota: try again later
       if (e.code == 'KEY_INVALID') rethrow;
+      if (e.code == 'FAILED') {
+        // this TTS model doesn't work → try the next one next time; none left → device voice
+        _ttsModels.remove(_ttsModel);
+        _ttsModel = _ttsModels.isEmpty ? null : _ttsModels.first;
+        _ttsBroken = _ttsModel == null;
+      }
     }
     return null;
   }

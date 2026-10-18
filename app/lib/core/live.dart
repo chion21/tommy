@@ -28,7 +28,8 @@ class LiveSession {
   final String system;
   final String voiceName;
   final List<Map<String, dynamic>> functions;
-  final bool proactive; // let the model stay silent when speech isn't meant for it
+  final bool proactive; // let the model stay silent when speech isn't meant for it (v1alpha; slower)
+  final bool fast; // thinking off → answers start ~0.6–1 s after you stop talking (measured)
 
   // callbacks
   final void Function(Uint8List pcm24k) onAudio;
@@ -52,12 +53,14 @@ class LiveSession {
     required this.onInterrupted,
     required this.onCall,
     required this.onClosed,
-    this.proactive = true,
+    this.proactive = false,
+    this.fast = true,
   });
 
   WebSocket? _ws;
   bool _open = false;
   bool _closedByUs = false;
+  bool _goAway = false;
   DateTime lastActivity = DateTime.now();
   bool get isOpen => _open;
 
@@ -79,7 +82,9 @@ class LiveSession {
         _open = false;
         final code = _ws?.closeCode;
         final reason = _ws?.closeReason ?? '';
-        final err = _errorFor(code, reason);
+        final err = (_goAway || code == 1000) && !reason.toLowerCase().contains('quota')
+            ? LiveError('CLOSED', reason)
+            : _errorFor(code, reason);
         if (!ready.isCompleted) ready.completeError(err);
         if (wasOpen && !_closedByUs) onClosed(err);
       },
@@ -96,6 +101,7 @@ class LiveSession {
         'speechConfig': {
           'voiceConfig': {'prebuiltVoiceConfig': {'voiceName': voiceName}},
         },
+        if (fast) 'thinkingConfig': {'thinkingBudget': 0},
       },
       'systemInstruction': {'parts': [{'text': system}]},
       'tools': [
@@ -174,8 +180,8 @@ class LiveSession {
       }
     }
     if (m.containsKey('goAway')) {
-      // the server will close this connection soon; the app reconnects on the next speech
-      _open = false;
+      // the server will close this connection soon; the app reconnects by itself
+      _goAway = true;
     }
   }
 

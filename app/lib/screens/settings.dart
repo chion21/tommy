@@ -9,6 +9,7 @@ import '../core/native.dart';
 import '../core/persona.dart';
 import '../core/themes.dart';
 import '../widgets/character_art.dart';
+import '../widgets/edge_glow.dart';
 import 'characters.dart';
 import 'link_screens.dart';
 import 'memory.dart';
@@ -219,7 +220,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SwitchListTile(
               secondary: const Icon(Icons.bolt),
               title: Text(app.t('live_mode')),
-              subtitle: Text(app.t('live_mode_hint')),
+              subtitle: Text(app.t('live_mode_hint') +
+                  (app.lastLatencyMs > 0
+                      ? '\n${app.t('last_reply', vars: {'s': (app.lastLatencyMs / 1000).toStringAsFixed(1)})}'
+                          '${app.liveModelName.isEmpty ? '' : ' · ${app.liveModelName}'}'
+                      : '')),
               value: p['live_mode'] == true,
               onChanged: (v) => app.setPref('live_mode', v),
             ),
@@ -338,6 +343,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     alignment: Alignment.bottomCenter,
                     child: Text(th.label, style: const TextStyle(fontSize: 9)),
                   ),
+                ),
+            ]),
+          ]),
+
+          // ---------- edge light ----------
+          _section(app.t('light'), [
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final m in ['theme', ...lightColors.keys, 'mix', 'off'])
+                ChoiceChip(
+                  avatar: m == 'off'
+                      ? const Icon(Icons.block, size: 16)
+                      : Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: m == 'mix' ? null : (lightColors[m] ?? app.theme.primary),
+                            gradient: m == 'mix'
+                                ? const SweepGradient(colors: [Colors.red, Colors.yellow, Colors.green, Colors.cyan, Colors.blue, Colors.purple, Colors.red])
+                                : null,
+                          ),
+                        ),
+                  label: Text(app.t('light_$m')),
+                  selected: p['light'] == m,
+                  onSelected: (_) => app.setPref('light', m),
                 ),
             ]),
           ]),

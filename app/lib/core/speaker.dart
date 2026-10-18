@@ -29,6 +29,9 @@ class PcmSpeaker {
   bool get speaking => DateTime.now().isBefore(_endsAt);
   DateTime get endsAt => _endsAt;
 
+  /// Starts the sound engine early so the first answer isn't delayed.
+  Future<void> warmUp() => _init();
+
   Future<void> _init() async {
     if (_ready || _broken) return;
     try {

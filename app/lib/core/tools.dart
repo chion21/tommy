@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'native.dart';
+import 'pc.dart';
 
 /// Everything Tommy can *do*. Gemini Live calls these as functions; each returns a small result map
 /// ({ok: true/false, ...}) so Tommy knows whether the job is really done — and if not, asks the person.
@@ -68,6 +71,43 @@ final toolDeclarations = <Map<String, dynamic>>[
   _fn('scroll', 'Scroll the phone screen.', {
     'direction': {'type': 'STRING', 'enum': ['up', 'down']},
   }, ['direction']),
+  _fn('media_control', 'Pause/play/next/previous the music or video that is playing, or change the volume.', {
+    'action': {'type': 'STRING', 'enum': ['pause', 'play', 'stop', 'next', 'previous', 'volume_up', 'volume_down', 'mute', 'unmute']},
+    'device': _device,
+  }, ['action']),
+  _fn('close_app', 'Close an app/window, e.g. the YouTube that is playing a song. Stops its sound too.',
+      {'name': _s('App or window name, e.g. YouTube, Chrome, Notepad'), 'device': _device}, ['name']),
+  // ---- PC (Windows) ----
+  _fn('list_windows', 'PC: list the open windows (app + title). Use it to see what is open before closing/focusing.',
+      {'device': _device}),
+  _fn('focus_window', 'PC: bring a window to the front (by part of its title or app name).',
+      {'name': _s('Part of the window title or app name'), 'device': _device}, ['name']),
+  _fn('look_at_screen', 'PC: take a screenshot and look at it — what is open, buttons, errors. Use it to check your work.',
+      {'question': _s('What you want to know about the screen'), 'device': _device}, ['question']),
+  _fn('click_on', 'PC: click a button/field/link that you can see on the screen (found by its description).',
+      {'target': _s('e.g. "the Send button", "the chat input box in Antigravity"'), 'double': {'type': 'BOOLEAN'}, 'device': _device},
+      ['target']),
+  _fn('type_on_pc', 'PC: type text into the window in front (any language), optionally press Enter.',
+      {'text': _s('Text to type'), 'enter': {'type': 'BOOLEAN'}, 'device': _device}, ['text']),
+  _fn('press_keys_pc', 'PC: press keys in the window in front. SendKeys notation: ^=Ctrl %=Alt +=Shift, {ENTER} {TAB} {ESC} {F4}. '
+      'e.g. "^s" save, "^t" new tab, "%{F4}" close window.', {'keys': _s('Keys'), 'device': _device}, ['keys']),
+  _fn('run_command', 'PC: run a PowerShell command and get its output (e.g. ipconfig, git status, dir, python --version). '
+      'Anything that deletes, uninstalls, downloads or shuts down needs the person\'s OK first: ask, then call again with confirmed=true.', {
+    'command': _s('PowerShell command'),
+    'confirmed': {'type': 'BOOLEAN', 'description': 'true only after the person said yes to a risky command'},
+    'device': _device,
+  }, ['command']),
+  _fn('open_terminal', 'PC: open a visible terminal (PowerShell) window, optionally running a command in it.',
+      {'command': _s('Command to run in the new terminal (can be empty)'), 'confirmed': {'type': 'BOOLEAN'}, 'device': _device}),
+  _fn('create_sheet', 'Make a spreadsheet/table (e.g. names, addresses, phone numbers). Saves an Excel-compatible file; '
+      'with google=true it also opens a new Google Sheet and pastes the table there.', {
+    'title': _s('File / sheet name'),
+    'columns': {'type': 'ARRAY', 'items': {'type': 'STRING'}, 'description': 'Column headings'},
+    'rows': {'type': 'ARRAY', 'items': {'type': 'STRING'}, 'description': 'One string per row, cells separated by " | "'},
+    'folder': _s('Where to save (folder path or name like Desktop, Documents, Downloads); empty = Documents/Tommy'),
+    'google': {'type': 'BOOLEAN', 'description': 'Also put it in a new Google Sheet'},
+    'device': _device,
+  }, ['title', 'columns', 'rows']),
   _fn('stop_listening', 'The person wants you to stop listening / go quiet until they press the button again.'),
 ];
 
@@ -191,8 +231,103 @@ Future<Map<String, dynamic>> runDeviceTool(String name, Map<String, dynamic> a) 
     case 'scroll':
       if (!await Native.handsOn()) return fail('Tommy hands (accessibility) is off.');
       return await Native.scroll(arg('direction')) ? ok() : fail('Nothing to scroll.');
+    case 'media_control':
+      final act = arg('action');
+      if (Platform.isWindows) return await Pc.media(act) ? ok() : fail('Unknown media action $act');
+      return await Native.media(act) ? ok() : fail('Could not control the media.');
+    case 'close_app':
+      final n = arg('name');
+      if (Platform.isWindows) {
+        final closed = await Pc.closeWindow(n);
+        return closed.isEmpty
+            ? fail('No open window matches "$n". Use list_windows to see what is open.', {'open': await Pc.windows()})
+            : ok({'closed': closed});
+      }
+      return await Native.closeApp(n) ? ok() : fail('"$n" is not installed.');
+    case 'list_windows':
+      if (!Pc.on) return fail('This works on the PC. On the phone use read_screen.');
+      return ok({'windows': await Pc.windows()});
+    case 'focus_window':
+      if (!Pc.on) return fail('This works on the PC.');
+      final t = await Pc.focusWindow(arg('name'));
+      return t.isEmpty ? fail('No window matches "${arg('name')}".', {'open': await Pc.windows()}) : ok({'focused': t});
+    case 'type_on_pc':
+      if (!Pc.on) return fail('This works on the PC. On the phone use type_text.');
+      return await Pc.typeText(arg('text'), enter: a['enter'] == true) ? ok() : fail('Could not type.');
+    case 'press_keys_pc':
+      if (!Pc.on) return fail('This works on the PC. On the phone use press_key.');
+      return await Pc.pressKeys(arg('keys')) ? ok() : fail('Could not press the keys.');
+    case 'run_command':
+    case 'open_terminal':
+      if (!Pc.on) return fail('Commands run on the PC. Use device "pc" if it is linked.');
+      final cmd = arg('command');
+      if (Pc.risky(cmd) && a['confirmed'] != true) {
+        return fail('This command can delete/change/download things. Tell the person exactly what it does and ask first; '
+            'if they agree, call again with confirmed=true.');
+      }
+      if (name == 'open_terminal') return await Pc.openTerminal(cmd) ? ok() : fail('Could not open the terminal.');
+      final (code, out) = await Pc.run(cmd);
+      final o = out.length > 3000 ? '${out.substring(0, 3000)}\n…(cut)' : out;
+      return code == 0 ? ok({'output': o}) : fail('Command failed (exit $code)', {'output': o});
+    case 'create_sheet':
+      return createSheet(a);
   }
   return fail('Unknown action $name');
+}
+
+/// Saves a table as CSV (opens in Excel / Google Sheets; Bangla works) and optionally pastes it into a new Google Sheet.
+Future<Map<String, dynamic>> createSheet(Map<String, dynamic> a) async {
+  final title = (a['title'] ?? 'Tommy sheet').toString().trim().replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+  final cols = ((a['columns'] as List?) ?? const []).map((e) => e.toString()).toList();
+  final rows = ((a['rows'] as List?) ?? const [])
+      .map((r) => r is List ? r.map((e) => e.toString().trim()).toList() : r.toString().split('|').map((e) => e.trim()).toList())
+      .toList();
+  String csvCell(String v) => v.contains(RegExp(r'[",\n]')) ? '"${v.replaceAll('"', '""')}"' : v;
+  final csv = '\uFEFF${[cols, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n';
+  final tsv = [cols, ...rows].map((r) => r.join('\t')).join('\n');
+
+  // where to save
+  final folderArg = (a['folder'] ?? '').toString().trim();
+  Directory dir;
+  if (Platform.isWindows) {
+    final home = Platform.environment['USERPROFILE'] ?? '';
+    final known = {'desktop': '$home\\Desktop', 'documents': '$home\\Documents', 'downloads': '$home\\Downloads'};
+    dir = Directory(folderArg.isEmpty
+        ? '$home\\Documents\\Tommy'
+        : (known[folderArg.toLowerCase()] ?? (folderArg.contains(':') ? folderArg : '$home\\$folderArg')));
+  } else if (Platform.isAndroid) {
+    final known = {'downloads': 'Download', 'download': 'Download', 'documents': 'Documents'};
+    dir = Directory('/storage/emulated/0/${known[folderArg.toLowerCase()] ?? 'Documents'}/Tommy');
+  } else {
+    dir = await getApplicationDocumentsDirectory();
+  }
+  File file;
+  try {
+    await dir.create(recursive: true);
+    file = File('${dir.path}${Platform.pathSeparator}$title.csv');
+    await file.writeAsString(csv);
+  } catch (_) {
+    final d = await getApplicationDocumentsDirectory();
+    file = File('${d.path}${Platform.pathSeparator}$title.csv');
+    await file.writeAsString(csv);
+  }
+  if (Platform.isWindows && a['google'] != true) {
+    await Process.start('cmd', ['/c', 'start', '', file.path], mode: ProcessStartMode.detached);
+  }
+  final result = <String, dynamic>{'saved': file.path, 'rows': rows.length};
+  if (a['google'] == true) {
+    // Real Google Sheets saving needs Google login (on hold) — for now: new sheet + paste
+    await Clipboard.setData(ClipboardData(text: tsv));
+    await openUrl('https://sheets.new');
+    if (Platform.isWindows) {
+      await Future.delayed(const Duration(seconds: 9));
+      await Pc.pressKeys('^v');
+      result['google'] = 'New Google Sheet opened and the table pasted. Rename it from the title at the top-left.';
+    } else {
+      result['google'] = 'New Google Sheet opened; the table is copied — long-press the first cell and Paste.';
+    }
+  }
+  return ok(result);
 }
 
 Future<bool> openAppByName(String name) async {

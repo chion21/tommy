@@ -58,14 +58,22 @@ def tts(text: str, model: str) -> np.ndarray:
     return pcm16.astype("<i2")
 
 
-async def run(model: str, version: str, proactive: bool, speech: list[np.ndarray], think0: bool = False) -> None:
+BIG_SYSTEM = SYSTEM + "\n" + ("Extra rules and memories about the person: likes tea, lives in Dhaka, works in an office. " * 60)
+BIG_TOOLS = [{"functionDeclarations": TOOLS[0]["functionDeclarations"] + [
+    {"name": f"tool_{i}", "description": f"Helper action number {i} for phone and PC control tasks.",
+     "parameters": {"type": "OBJECT", "properties": {"arg": {"type": "STRING"}, "device": {"type": "STRING"}}}}
+    for i in range(30)]}, {"googleSearch": {}}]
+
+
+async def run(model: str, version: str, proactive: bool, speech: list[np.ndarray], think0: bool = False,
+              big: bool = False) -> None:
     url = (f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.{version}"
            f".GenerativeService.BidiGenerateContent?key={KEY}")
     setup = {"model": f"models/{model}",
              "generationConfig": {"responseModalities": ["AUDIO"],
                                   "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "Aoede"}}}},
-             "systemInstruction": {"parts": [{"text": SYSTEM}]},
-             "tools": TOOLS,
+             "systemInstruction": {"parts": [{"text": BIG_SYSTEM if big else SYSTEM}]},
+             "tools": BIG_TOOLS if big else TOOLS,
              "inputAudioTranscription": {}, "outputAudioTranscription": {},
              "realtimeInputConfig": {"automaticActivityDetection": {
                  "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH", "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
@@ -74,7 +82,7 @@ async def run(model: str, version: str, proactive: bool, speech: list[np.ndarray
         setup["proactivity"] = {"proactiveAudio": True}
     if think0:
         setup["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
-    label = f"{model} {version}{' proactive' if proactive else ''}{' think0' if think0 else ''}"
+    label = f"{model} {version}{' proactive' if proactive else ''}{' think0' if think0 else ''}{' BIG' if big else ''}"
     t0 = time.time()
     try:
         ws = await websockets.connect(url, max_size=None, open_timeout=15)
@@ -159,11 +167,10 @@ def main() -> None:
                 note(f"tts {m} failed: {str(e)[:150]}")
     if not speech:
         return
-    skip = ("transcribe", "translate", "robotics", "thinking")
-    order = [m for m in live if not any(x in m for x in skip)]
-    for model in order[:5]:
-        for version, proactive, think0 in (("v1alpha", True, False), ("v1beta", False, False), ("v1beta", False, True)):
-            asyncio.run(run(model, version, proactive, speech, think0))
+    # the app's setup: fastest model, thinking off, full-size prompt + all tools
+    for model in [m for m in ("gemini-3.8-live", "gemini-3.1-flash-live-preview") if m in live]:
+        for _ in range(2):
+            asyncio.run(run(model, "v1beta", False, speech, think0=True, big=True))
 
 
 if __name__ == "__main__":

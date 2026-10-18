@@ -5,7 +5,13 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.app.ActivityManager
+import android.media.AudioManager
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.KeyEvent
 import android.provider.ContactsContract
 import android.os.Build
 import android.provider.Settings
@@ -65,6 +71,8 @@ class MainActivity : FlutterActivity() {
                         if (HandsService.instance != null) HandsService.autoSendUntil = System.currentTimeMillis() + 15000
                         result.success(HandsService.instance != null)
                     }
+                    "media" -> result.success(media(call.argument<String>("action") ?: "pause"))
+                    "closeApp" -> result.success(closeApp(call.argument<String>("name") ?: ""))
                     // ---- contacts & calls ----
                     "findContact" -> result.success(findContact(call.argument<String>("name") ?: ""))
                     "callNumber" -> result.success(callNumber(call.argument<String>("number") ?: ""))
@@ -153,5 +161,47 @@ class MainActivity : FlutterActivity() {
         val action = if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL
         startActivity(Intent(action, Uri.parse("tel:$n")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return if (direct) "calling" else "dialer"
+    }
+
+    /** Music/video control for whatever is playing (YouTube, Spotify…) + volume. */
+    private fun media(action: String): Boolean {
+        val am = getSystemService(AUDIO_SERVICE) as AudioManager
+        fun key(code: Int) {
+            val t = SystemClock.uptimeMillis()
+            am.dispatchMediaKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_DOWN, code, 0))
+            am.dispatchMediaKeyEvent(KeyEvent(t, t, KeyEvent.ACTION_UP, code, 0))
+        }
+        when (action.lowercase()) {
+            "pause", "stop" -> key(KeyEvent.KEYCODE_MEDIA_PAUSE)
+            "play" -> key(KeyEvent.KEYCODE_MEDIA_PLAY)
+            "next" -> key(KeyEvent.KEYCODE_MEDIA_NEXT)
+            "previous" -> key(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            "volume_up" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            "volume_down" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            "mute" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, AudioManager.FLAG_SHOW_UI)
+            "unmute" -> am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, AudioManager.FLAG_SHOW_UI)
+            else -> return false
+        }
+        return true
+    }
+
+    /** Closes an app: stops its sound, goes to the home screen and ends it in the background. */
+    private fun closeApp(name: String): Boolean {
+        val want = name.trim().lowercase()
+        val pm = packageManager
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val apps = pm.queryIntentActivities(launcher, 0)
+        val match = apps.firstOrNull { it.loadLabel(pm).toString().lowercase() == want }
+            ?: apps.firstOrNull { it.loadLabel(pm).toString().lowercase().contains(want) }
+        media("pause")
+        startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val pkg = match?.activityInfo?.packageName ?: return want.isEmpty()
+        if (pkg == packageName) return true
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                (getSystemService(ACTIVITY_SERVICE) as ActivityManager).killBackgroundProcesses(pkg)
+            } catch (e: Exception) {}
+        }, 800)
+        return true
     }
 }

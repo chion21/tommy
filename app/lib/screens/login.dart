@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
+import '../core/auth.dart';
 import '../widgets/orb.dart';
 
 /// Phone number or email + password (works without a server), Google (coming soon), forgot password.
@@ -42,8 +43,8 @@ class _LoginScreenState extends State<LoginScreen> {
         title: Text(app.t('forgot')),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           Text(app.t('forgot_hint')),
-          TextField(controller: ctrl, keyboardType: TextInputType.emailAddress,
-              decoration: InputDecoration(labelText: app.t('email'))),
+          TextField(controller: ctrl, keyboardType: TextInputType.text,
+              decoration: InputDecoration(labelText: app.t('phone_or_email'))),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: Text(app.t('cancel'))),
@@ -52,10 +53,47 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
     if (email == null || email.trim().isEmpty) return;
+    if (!email.contains('@') || await app.isDeviceAccount(email)) {
+      await _resetHere(email.trim());
+      return;
+    }
     await _run(() async {
       await app.sendReset(email);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(app.t('reset_sent'))));
     });
+  }
+
+  /// Account saved on this phone/PC: choose a new password right here.
+  Future<void> _resetHere(String login) async {
+    final app = widget.app;
+    if (!await app.isDeviceAccount(login)) {
+      if (mounted) setState(() => _error = app.err(AuthError('EMAIL_NOT_FOUND')));
+      return;
+    }
+    final p1 = TextEditingController();
+    final p2 = TextEditingController();
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(app.t('new_password')),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(app.t('reset_here_hint', vars: {'login': login})),
+          TextField(controller: p1, obscureText: true, decoration: InputDecoration(labelText: app.t('new_password'))),
+          TextField(controller: p2, obscureText: true, decoration: InputDecoration(labelText: app.t('repeat_password'))),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(app.t('cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(app.t('save'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (p1.text != p2.text) {
+      setState(() => _error = app.t('password_mismatch'));
+      return;
+    }
+    await _run(() => app.resetDevicePassword(login, p1.text));
   }
 
   @override

@@ -54,4 +54,7 @@ class Native {
 
   /// 'calling' | 'dialer' | 'no_number' | null (not Android)
   static Future<String?> callNumber(String number) => _call<String>('callNumber', {'number': number});
+
+  static Future<bool> media(String action) async => (await _call<bool>('media', {'action': action})) ?? false;
+  static Future<bool> closeApp(String name) async => (await _call<bool>('closeApp', {'name': name})) ?? false;
 }

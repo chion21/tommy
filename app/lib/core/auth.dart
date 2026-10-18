@@ -73,6 +73,22 @@ class LocalAccounts {
     return Session(uid: uidFor(l), email: l, displayName: name.trim(), provider: 'device');
   }
 
+  /// Forgot password for an account on this device: set a new one (the person has the device in hand).
+  Future<Session> resetPassword(String login, String newPassword) async {
+    final l = norm(login);
+    if (newPassword.length < 6) throw AuthError('WEAK_PASSWORD');
+    final all = await _read();
+    final a = all[l] as Map<String, dynamic>?;
+    if (a == null) throw AuthError('EMAIL_NOT_FOUND');
+    final rnd = Random.secure();
+    final salt = base64UrlEncode(List.generate(16, (_) => rnd.nextInt(256)));
+    all[l] = {...a, 'salt': salt, 'hash': _hash(salt, newPassword)};
+    await (await _file()).writeAsString(jsonEncode(all));
+    return Session(uid: a['uid'] as String, email: l, displayName: (a['name'] ?? '') as String, provider: 'device');
+  }
+
+  Future<bool> exists(String login) async => (await _read()).containsKey(norm(login));
+
   Future<Session> login(String login, String password) async {
     final l = norm(login);
     final a = (await _read())[l] as Map<String, dynamic>?;
