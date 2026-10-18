@@ -25,8 +25,14 @@ SYSTEM = ("You are Tommy (টমি), a sweet Bangla voice assistant. Reply in s
           "Only respond when called by name. For music call play_youtube right away.")
 
 
+RESULTS = []
+
+
 def note(msg: str) -> None:
-    print(f"::notice::{msg}", flush=True)
+    print(msg, flush=True)
+    RESULTS.append(msg)
+    with open("docs/live_latency.txt", "w", encoding="utf-8") as f:
+        f.write(time.strftime("%Y-%m-%d %H:%M UTC\n", time.gmtime()) + "\n".join(RESULTS) + "\n")
 
 
 def get(path: str):
@@ -52,7 +58,7 @@ def tts(text: str, model: str) -> np.ndarray:
     return pcm16.astype("<i2")
 
 
-async def run(model: str, version: str, proactive: bool, speech: list[np.ndarray]) -> None:
+async def run(model: str, version: str, proactive: bool, speech: list[np.ndarray], think0: bool = False) -> None:
     url = (f"wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.{version}"
            f".GenerativeService.BidiGenerateContent?key={KEY}")
     setup = {"model": f"models/{model}",
@@ -66,7 +72,9 @@ async def run(model: str, version: str, proactive: bool, speech: list[np.ndarray
                  "prefixPaddingMs": 120, "silenceDurationMs": 450}}}
     if proactive:
         setup["proactivity"] = {"proactiveAudio": True}
-    label = f"{model} {version}{' proactive' if proactive else ''}"
+    if think0:
+        setup["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
+    label = f"{model} {version}{' proactive' if proactive else ''}{' think0' if think0 else ''}"
     t0 = time.time()
     try:
         ws = await websockets.connect(url, max_size=None, open_timeout=15)
@@ -154,8 +162,8 @@ def main() -> None:
     skip = ("transcribe", "translate", "robotics", "thinking")
     order = [m for m in live if not any(x in m for x in skip)]
     for model in order[:5]:
-        for version, proactive in (("v1alpha", True), ("v1beta", False)):
-            asyncio.run(run(model, version, proactive, speech))
+        for version, proactive, think0 in (("v1alpha", True, False), ("v1beta", False, False), ("v1beta", False, True)):
+            asyncio.run(run(model, version, proactive, speech, think0))
 
 
 if __name__ == "__main__":

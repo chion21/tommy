@@ -1,7 +1,13 @@
 name: build-apps
 # Builds the Android APK and Windows Setup.exe, then puts both on Releases → "latest".
 on:
-  push: { paths: ["app/**", ".github/workflows/apps.yml"] }
+  push:
+    paths:
+      - "app/**"
+      - ".github/workflows/apps.yml"
+      - "!app/tool/live_latency.py"
+      - "!app/tool/gen_characters*.py"
+      - "!app/tool/upscale.py"
   workflow_dispatch:
 
 env:

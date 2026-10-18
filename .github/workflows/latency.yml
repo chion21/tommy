@@ -3,6 +3,7 @@ name: live-latency
 on:
   push: { paths: ["app/tool/live_latency.py", ".github/workflows/latency.yml"] }
   workflow_dispatch:
+permissions: { contents: write }
 jobs:
   measure:
     runs-on: ubuntu-latest
@@ -13,3 +14,9 @@ jobs:
       - run: pip install websockets numpy
       - env: { GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY }}" }
         run: python app/tool/live_latency.py
+      - name: Save results to docs/live_latency.txt
+        if: always()
+        run: |
+          git config user.name "tommy-bot"; git config user.email "tommy-bot@users.noreply.github.com"
+          git add docs/live_latency.txt; git commit -m "Live latency results" || exit 0
+          git pull --rebase origin main; git push
