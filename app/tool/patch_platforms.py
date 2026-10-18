@@ -118,6 +118,8 @@ if kts.exists():
           'signingConfig = if (System.getenv("TOMMY_KEYSTORE").isNullOrEmpty()) '
           'signingConfigs.getByName("debug") else signingConfigs.getByName("release")',
           "android release signing")
+    # compress native libraries inside the APK (download ~8 MB smaller)
+    patch(kts, "android {\n", "android {\n    packaging { jniLibs { useLegacyPackaging = true } }\n", "android compressed native libs")
     s = kts.read_text(encoding="utf-8")
     s = re.sub(r"minSdk = flutter\.minSdkVersion", "minSdk = 23", s)
     kts.write_text(s, encoding="utf-8")

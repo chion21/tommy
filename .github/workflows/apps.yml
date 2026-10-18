@@ -30,6 +30,8 @@ jobs:
         with: { channel: stable, cache: true }
       - run: flutter create --platforms=android,windows --org com.tommyai --project-name tommy .
       - run: python3 tool/patch_platforms.py
+      - name: Phone app needs only the portrait pictures (smaller APK)
+        run: rm -f assets/characters/*_pc.webp
       - run: flutter pub get
       - name: Analyze (errors also shown as annotations)
         run: |
