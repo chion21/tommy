@@ -140,11 +140,29 @@ def main() -> None:
     note(f"Live models for this key: {', '.join(live) or 'NONE'}")
     if not live or not tts_models:
         return
-    speech = [tts(s, sorted(tts_models, key=lambda n: "flash" not in n)[0]) for s in SENTENCES]
-    for model in live[:4]:
+    note(f"TTS models: {', '.join(tts_models)}")
+    speech = []
+    for s in SENTENCES:
+        for m in sorted(tts_models, key=lambda n: ("flash" not in n, n)):
+            try:
+                speech.append(tts(s, m))
+                break
+            except Exception as e:  # noqa: BLE001
+                note(f"tts {m} failed: {str(e)[:150]}")
+    if not speech:
+        return
+    skip = ("transcribe", "translate", "robotics", "thinking")
+    order = [m for m in live if not any(x in m for x in skip)]
+    for model in order[:5]:
         for version, proactive in (("v1alpha", True), ("v1beta", False)):
             asyncio.run(run(model, version, proactive, speech))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        main()
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        for line in traceback.format_exc().splitlines()[-6:]:
+            note("ERR " + line)
+        sys.exit(1)
