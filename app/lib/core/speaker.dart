@@ -61,7 +61,7 @@ class PcmSpeaker {
           format: BufferType.s16le,
         );
         SoLoud.instance.addAudioDataStream(_src!, pcm);
-        _handle = await SoLoud.instance.play(_src!);
+        _handle = SoLoud.instance.play(_src!);
       } else {
         SoLoud.instance.addAudioDataStream(_src!, pcm);
       }
