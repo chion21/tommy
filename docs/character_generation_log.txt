@@ -1,3 +1,4 @@
 f4_phone.webp original (555, 1061)
 ok   f4: pollinations, phone (554, 986)
 failed: none
+2026-10-18 characters-hd: f1_pc.webp f1_phone.webp f2_pc.webp f2_phone.webp f3_pc.webp f3_phone.webp f4_pc.webp f4_phone.webp f5_pc.webp f5_phone.webp m1_pc.webp m1_phone.webp m2_pc.webp m2_phone.webp m3_pc.webp m3_phone.webp m4_pc.webp m4_phone.webp m5_pc.webp m5_phone.webp 
