@@ -1,0 +1,64 @@
+name: characters-hd
+# Sharp anime pictures (v2): Animagine XL on the CPU runner + Real-ESRGAN anime 4x. One job per character,
+# all in parallel; then the pictures are added to the app and the apps are rebuilt.
+on:
+  push: { paths: ["app/tool/gen_characters_hd.py", ".github/workflows/characters-hd.yml"] }
+  workflow_dispatch:
+    inputs:
+      only: { description: 'Only these ids as JSON, e.g. ["f1","m3"] (empty = all)', required: false, default: "" }
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  draw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        id: ${{ fromJSON(inputs.only != '' && inputs.only || '["f1","f2","f3","f4","f5","m1","m2","m3","m4","m5"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: More memory (swap) for the big model
+        run: |
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile && free -h
+      - run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install diffusers transformers accelerate safetensors pillow numpy
+      - name: Draw ${{ matrix.id }}
+        env: { HF_HUB_DISABLE_PROGRESS_BARS: "1" }
+        run: python app/tool/gen_characters_hd.py ${{ matrix.id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: char-${{ matrix.id }}
+          path: |
+            app/assets/characters/${{ matrix.id }}_phone.webp
+            app/assets/characters/${{ matrix.id }}_pc.webp
+
+  commit:
+    needs: draw
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: new, pattern: "char-*", merge-multiple: true }
+      - name: Add the pictures and rebuild the apps
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          ls -la new || exit 0
+          cp new/*.webp app/assets/characters/ 2>/dev/null || exit 0
+          echo "$(date -u +%F) characters-hd: $(ls new | tr '\n' ' ')" >> docs/character_generation_log.txt
+          git config user.name "tommy-bot"
+          git config user.email "tommy-bot@users.noreply.github.com"
+          git add app/assets/characters/ docs/character_generation_log.txt
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "Character pictures v2: sharp anime (Animagine XL + Real-ESRGAN anime)"
+          git pull --rebase origin main
+          git push
+          gh workflow run build-apps -R "$GITHUB_REPOSITORY" --ref main
