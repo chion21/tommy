@@ -31,4 +31,27 @@ class Native {
   static Future<bool> answerCall() async => (await _call<bool>('answerCall')) ?? false;
   static Future<bool> endCall() async => (await _call<bool>('endCall')) ?? false;
   static Future<bool> openApp(String name) async => (await _call<bool>('openApp', {'name': name})) ?? false;
+
+  // ---- Tommy's hands (accessibility service) ----
+  static Future<bool> handsOn() async => (await _call<bool>('handsOn')) ?? false;
+  static Future<void> openHandsSettings() => _call('openHandsSettings');
+  static Future<Map<String, dynamic>?> screen() async {
+    final r = await _call<Map>('screen');
+    return r == null ? null : Map<String, dynamic>.from(r);
+  }
+
+  static Future<bool> tap(String target) async => (await _call<bool>('tap', {'target': target})) ?? false;
+  static Future<bool> typeText(String text) async => (await _call<bool>('typeText', {'text': text})) ?? false;
+  static Future<bool> press(String key) async => (await _call<bool>('press', {'key': key})) ?? false;
+  static Future<bool> scroll(String direction) async => (await _call<bool>('scroll', {'direction': direction})) ?? false;
+  static Future<bool> armAutoSend() async => (await _call<bool>('armAutoSend')) ?? false;
+
+  // ---- contacts & calls ----
+  static Future<Map<String, String>?> findContact(String name) async {
+    final r = await _call<Map>('findContact', {'name': name});
+    return r == null ? null : r.map((k, v) => MapEntry(k.toString(), v.toString()));
+  }
+
+  /// 'calling' | 'dialer' | 'no_number' | null (not Android)
+  static Future<String?> callNumber(String number) => _call<String>('callNumber', {'number': number});
 }

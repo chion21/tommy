@@ -35,6 +35,8 @@ perms = ('<uses-permission android:name="android.permission.INTERNET"/>\n'
          '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
          '    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS"/>\n'
          '    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n'
+         '    <uses-permission android:name="android.permission.READ_CONTACTS"/>\n'
+         '    <uses-permission android:name="android.permission.CALL_PHONE"/>\n'
          '    <queries>\n'
          '        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent>\n'
          '        <intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent>\n'
@@ -47,6 +49,11 @@ services = ('        <service android:name=".KeepAliveService" android:exported=
             '        <service android:name=".NotifyListener" android:label="Tommy" android:exported="true"'
             ' android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">\n'
             '            <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>\n'
+            '        </service>\n'
+            '        <service android:name=".HandsService" android:label="Tommy" android:exported="true"'
+            ' android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">\n'
+            '            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>\n'
+            '            <meta-data android:name="android.accessibilityservice" android:resource="@xml/tommy_hands"/>\n'
             '        </service>\n'
             '    </application>')
 patch(manifest, "<application", perms, "android permissions")
@@ -62,6 +69,28 @@ if kt_dir.exists():
 else:
     print(f"FAIL kotlin folder not found: {kt_dir}")
     ok = False
+# accessibility config for Tommy's "hands"
+xml_dir = root / "android/app/src/main/res/xml"
+if manifest.exists():
+    xml_dir.mkdir(parents=True, exist_ok=True)
+    (xml_dir / "tommy_hands.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"\n'
+        '    android:description="@string/tommy_hands_desc"\n'
+        '    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"\n'
+        '    android:accessibilityFeedbackType="feedbackGeneric"\n'
+        '    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"\n'
+        '    android:canRetrieveWindowContent="true"\n'
+        '    android:canPerformGestures="false"\n'
+        '    android:notificationTimeout="200"/>\n', encoding="utf-8")
+    values = root / "android/app/src/main/res/values"
+    values.mkdir(parents=True, exist_ok=True)
+    (values / "tommy_strings.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+        '    <string name="tommy_hands_desc">Lets Tommy read the screen and press buttons when you ask by voice '
+        '(for example pressing Send in WhatsApp). Nothing is collected or stored.</string>\n</resources>\n',
+        encoding="utf-8")
+    print("ok   accessibility config")
 if manifest.exists():
     s = manifest.read_text(encoding="utf-8")
     s2 = re.sub(r'android:label="[^"]*"', 'android:label="Tommy"', s, count=1)

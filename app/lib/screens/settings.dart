@@ -179,10 +179,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final r in personas)
                 ChoiceChip(
-                  label: Text(app.t(r == 'partner' ? (app.voiceFemale ? 'persona_partner_f' : 'persona_partner_m') : 'persona_$r')),
-                  selected: p['persona'] == r,
+                  label: Text(app.t('persona_$r')),
+                  selected: normalizePersona(p['persona'] as String, app.voiceFemale) == r,
                   onSelected: (_) async {
-                    if (r == 'partner' && p['persona'] != 'partner') {
+                    if (isPartner(r) && !isPartner(p['persona'] as String)) {
                       final ok = await showDialog<bool>(
                         context: context,
                         builder: (c) => AlertDialog(
@@ -196,6 +196,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (ok != true) return;
                     }
                     await app.setPref('persona', r);
+                    // girlfriend → a girl's voice & picture, boyfriend → a boy's (can still be changed below)
+                    if (isPartner(r)) {
+                      final wantFemale = r == 'girlfriend';
+                      if (app.voiceFemale != wantFemale) await app.setPref('voice', wantFemale ? 'aoede' : 'puck');
+                      if (app.character.female != wantFemale) {
+                        await app.setPref('character', characters.firstWhere((c) => c.female == wantFemale).id);
+                      }
+                    }
                   },
                 ),
             ]),
@@ -209,6 +217,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
             SwitchListTile(
+              secondary: const Icon(Icons.bolt),
+              title: Text(app.t('live_mode')),
+              subtitle: Text(app.t('live_mode_hint')),
+              value: p['live_mode'] == true,
+              onChanged: (v) => app.setPref('live_mode', v),
+            ),
+            SwitchListTile(
               secondary: const Icon(Icons.hearing),
               title: Text(app.t('hands_free')),
               subtitle: Text(app.t('hands_free_hint')),
@@ -216,6 +231,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (v) => app.setPref('hands_free', v),
             ),
             if (Platform.isAndroid) ...[
+              FutureBuilder<bool>(
+                future: Native.handsOn(),
+                builder: (_, snap) => ListTile(
+                  leading: Icon(snap.data == true ? Icons.check_circle : Icons.pan_tool_alt_outlined,
+                      color: snap.data == true ? Colors.greenAccent : null),
+                  title: Text(app.t(snap.data == true ? 'hands_ok' : 'hands_title')),
+                  subtitle: snap.data == true ? null : Text(app.t('hands_hint')),
+                  onTap: () async {
+                    await Native.openHandsSettings();
+                    if (mounted) setState(() {});
+                  },
+                ),
+              ),
               SwitchListTile(
                 secondary: const Icon(Icons.notifications_active_outlined),
                 title: Text(app.t('announce')),

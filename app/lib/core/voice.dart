@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -34,14 +35,17 @@ class VoiceIO {
   Future<Uint8List?> listenOnce({
     Duration waitFor = const Duration(seconds: 8),
     Duration maxTalk = const Duration(seconds: 15),
-    Duration endSilence = const Duration(milliseconds: 1100),
+    Duration endSilence = const Duration(milliseconds: 750),
   }) async {
     if (_recording) return null;
     if (!await _rec.hasPermission()) throw Exception('MIC_DENIED');
     final path = await _tmp('wav');
     _stopNow = false;
     _recording = true;
-    await _rec.start(const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1), path: path);
+    await _rec.start(
+        const RecordConfig(
+            encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1, audioInterruption: AudioInterruptionMode.none),
+        path: path);
 
     final started = DateTime.now();
     DateTime? speechStart;
@@ -128,5 +132,51 @@ class VoiceIO {
     await _ampSub?.cancel();
     await _rec.dispose();
     await _player.dispose();
+  }
+}
+
+/// Continuous microphone stream for Gemini Live (16 kHz, 16-bit mono PCM) with echo cancelling, so Tommy
+/// doesn't hear its own voice. Keeps recording when another app (YouTube, music) takes the audio focus.
+class LiveMic {
+  final _rec = AudioRecorder();
+  StreamSubscription<Uint8List>? _sub;
+  bool get running => _sub != null;
+
+  /// [onChunk] gets each piece of audio and its loudness in dBFS.
+  Future<void> start(void Function(Uint8List pcm, double db) onChunk) async {
+    if (_sub != null) return;
+    if (!await _rec.hasPermission()) throw Exception('MIC_DENIED');
+    final stream = await _rec.startStream(RecordConfig(
+      encoder: AudioEncoder.pcm16bits,
+      sampleRate: 16000,
+      numChannels: 1,
+      echoCancel: true,
+      noiseSuppress: true,
+      autoGain: true,
+      audioInterruption: AudioInterruptionMode.none,
+      androidConfig: const AndroidRecordConfig(audioSource: AndroidAudioSource.voiceCommunication),
+    ));
+    _sub = stream.listen((pcm) => onChunk(pcm, dbfs(pcm)));
+  }
+
+  Future<void> stop() async {
+    await _sub?.cancel();
+    _sub = null;
+    try {
+      await _rec.stop();
+    } catch (_) {}
+  }
+
+  static double dbfs(Uint8List pcm) {
+    final n = pcm.length ~/ 2;
+    if (n == 0) return -100;
+    final bd = ByteData.sublistView(pcm);
+    var sum = 0.0;
+    for (var i = 0; i < n; i++) {
+      final v = bd.getInt16(i * 2, Endian.little) / 32768.0;
+      sum += v * v;
+    }
+    final rms = math.sqrt(sum / n);
+    return rms <= 0.000001 ? -100 : 20 * math.log(rms) / math.ln10;
   }
 }

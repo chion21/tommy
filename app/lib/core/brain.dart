@@ -31,6 +31,7 @@ class Brain {
   final String key;
   String? _chatModel;
   String? _ttsModel;
+  String? _liveModel;
   bool _ttsBroken = false;
   Brain(this.key);
 
@@ -57,10 +58,21 @@ class Brain {
     if (_chatModel != null) return;
     final data = await _call('models?pageSize=1000', null);
     final names = <String>[];
+    final live = <String>[];
     for (final m in (data['models'] as List? ?? [])) {
       final methods = ((m as Map)['supportedGenerationMethods'] as List? ?? []).cast<String>();
-      if (methods.contains('generateContent')) names.add((m['name'] as String).replaceFirst('models/', ''));
+      final n = (m['name'] as String).replaceFirst('models/', '');
+      if (methods.contains('generateContent')) names.add(n);
+      if (methods.contains('bidiGenerateContent')) live.add(n);
     }
+    // real-time voice model: prefer "native audio" (most human voice), newest first
+    live.sort((a, b) {
+      final na = a.contains('native-audio') ? 0 : 1, nb = b.contains('native-audio') ? 0 : 1;
+      if (na != nb) return na - nb;
+      return _rank(a).compareTo(_rank(b));
+    });
+    final okLive = live.where((n) => !n.contains('image') && !n.contains('tts')).toList();
+    _liveModel = okLive.isEmpty ? null : okLive.first;
     bool bad(String n) => ['image', 'tts', 'live', 'embedding', 'audio', 'robotics', 'computer', 'learnlm', 'gemma', 'aqa']
         .any(n.contains);
     final chat = names.where((n) => n.contains('flash') && !bad(n)).toList()..sort((a, b) => _rank(a).compareTo(_rank(b)));
@@ -84,6 +96,57 @@ class Brain {
 
   String get chatModel => _chatModel ?? '?';
 
+  /// Gemini Live model for fast two-way voice, or null if this key has none.
+  Future<String?> liveModel() async {
+    await _pickModels();
+    return _liveModel;
+  }
+
+  /// Looks things up on the web (Google Search) and answers as neat bullet points.
+  /// [deep] = a longer, more thorough report.
+  Future<String> research(String question, {bool deep = false, String language = 'auto'}) async {
+    await _pickModels();
+    final lang = switch (language) {
+      'bn' => 'Write in Bangla.',
+      'en' => 'Write in English.',
+      'hi' => 'Write in Hindi.',
+      _ => 'Write in the language of the question (Bangla question → Bangla answer).',
+    };
+    final ask = deep
+        ? 'Do deep research on this using Google Search. Check several sources. Then write a well-organised report: '
+            'a 1-2 line summary first, then short headed sections with bullet points (•), important numbers/dates, '
+            'pros/cons or options if relevant, and a final "সিদ্ধান্ত / Conclusion" line. Be accurate; say if sources disagree. $lang\n\nQuestion: $question'
+        : 'Research this using Google Search and answer clearly in 3-8 bullet points (•), most important first, '
+            'with key numbers/dates. Be accurate. $lang\n\nQuestion: $question';
+    final data = await _call('models/$_chatModel:generateContent', {
+      'contents': [
+        {'parts': [{'text': ask}]}
+      ],
+      'tools': [
+        {'google_search': {}}
+      ],
+      'generationConfig': {
+        'temperature': 0.4,
+        if (!deep && _chatModel!.startsWith('gemini-2.5')) 'thinkingConfig': {'thinkingBudget': 0},
+      },
+    }, timeout: Duration(seconds: deep ? 120 : 45));
+    final cands = (data['candidates'] as List?) ?? const [];
+    if (cands.isEmpty) return '';
+    final c = cands.first as Map;
+    final parts = ((c['content'] as Map?)?['parts'] as List?) ?? const [];
+    var text = parts.map((p) => ((p as Map)['text'] ?? '').toString()).join().trim();
+    final chunks = ((c['groundingMetadata'] as Map?)?['groundingChunks'] as List?) ?? const [];
+    final sources = <String>[];
+    for (final ch in chunks) {
+      final w = (ch as Map)['web'] as Map?;
+      final title = (w?['title'] ?? '').toString();
+      if (title.isNotEmpty && !sources.contains(title)) sources.add(title);
+      if (sources.length >= 5) break;
+    }
+    if (sources.isNotEmpty) text += '\n\nউৎস / Sources: ${sources.join(', ')}';
+    return text;
+  }
+
   static final _schema = {
     'type': 'OBJECT',
     'properties': {
@@ -92,7 +155,8 @@ class Brain {
       'reply': {'type': 'STRING'},
       'action': {
         'type': 'STRING',
-        'enum': ['none', 'open_url', 'youtube', 'web_search', 'open_app', 'call', 'whatsapp', 'answer_call', 'reject_call', 'recall', 'stop'],
+        'enum': ['none', 'open_url', 'youtube', 'web_search', 'research', 'deep_research', 'open_app', 'call', 'whatsapp',
+            'answer_call', 'reject_call', 'recall', 'stop'],
       },
       'arg': {'type': 'STRING'},
       'text': {'type': 'STRING'},

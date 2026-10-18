@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.ContactsContract
 import android.os.Build
 import android.provider.Settings
 import android.telecom.TelecomManager
@@ -48,6 +50,24 @@ class MainActivity : FlutterActivity() {
                     "answerCall" -> result.success(answerCall())
                     "endCall" -> result.success(endCall())
                     "openApp" -> result.success(openApp(call.argument<String>("name") ?: ""))
+                    // ---- Tommy's hands (accessibility) ----
+                    "handsOn" -> result.success(HandsService.instance != null)
+                    "openHandsSettings" -> {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        result.success(true)
+                    }
+                    "screen" -> result.success(HandsService.instance?.screen())
+                    "tap" -> result.success(HandsService.instance?.tap(call.argument<String>("target") ?: "") ?: false)
+                    "typeText" -> result.success(HandsService.instance?.typeText(call.argument<String>("text") ?: "") ?: false)
+                    "press" -> result.success(HandsService.instance?.press(call.argument<String>("key") ?: "") ?: false)
+                    "scroll" -> result.success(HandsService.instance?.scroll(call.argument<String>("direction") ?: "down") ?: false)
+                    "armAutoSend" -> {
+                        if (HandsService.instance != null) HandsService.autoSendUntil = System.currentTimeMillis() + 15000
+                        result.success(HandsService.instance != null)
+                    }
+                    // ---- contacts & calls ----
+                    "findContact" -> result.success(findContact(call.argument<String>("name") ?: ""))
+                    "callNumber" -> result.success(callNumber(call.argument<String>("number") ?: ""))
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {
@@ -59,6 +79,8 @@ class MainActivity : FlutterActivity() {
     private fun askPermissions() {
         if (Build.VERSION.SDK_INT < 23) return
         val wanted = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        wanted.add(Manifest.permission.READ_CONTACTS)
+        wanted.add(Manifest.permission.CALL_PHONE)
         if (Build.VERSION.SDK_INT >= 26) wanted.add(Manifest.permission.ANSWER_PHONE_CALLS)
         if (Build.VERSION.SDK_INT >= 33) wanted.add(Manifest.permission.POST_NOTIFICATIONS)
         val missing = wanted.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
@@ -102,5 +124,34 @@ class MainActivity : FlutterActivity() {
         val intent = pm.getLaunchIntentForPackage(match.activityInfo.packageName) ?: return false
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return true
+    }
+
+    /** Looks up a saved contact by name → {name, number}, or null. */
+    private fun findContact(name: String): Map<String, String>? {
+        val want = name.trim()
+        if (want.isEmpty()) return null
+        if (Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) return null
+        val uri = Uri.withAppendedPath(ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(want))
+        contentResolver.query(
+            uri,
+            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+            null, null, null
+        )?.use { c ->
+            if (c.moveToFirst()) return mapOf("name" to (c.getString(0) ?: want), "number" to (c.getString(1) ?: ""))
+        }
+        return null
+    }
+
+    /** Calls straight away when allowed, otherwise opens the dialer with the number filled in. */
+    @SuppressLint("MissingPermission")
+    private fun callNumber(number: String): String {
+        val n = number.filter { it.isDigit() || it == '+' }
+        if (n.isEmpty()) return "no_number"
+        val direct = Build.VERSION.SDK_INT < 23 ||
+            checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        val action = if (direct) Intent.ACTION_CALL else Intent.ACTION_DIAL
+        startActivity(Intent(action, Uri.parse("tel:$n")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return if (direct) "calling" else "dialer"
     }
 }

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -10,11 +12,14 @@ import 'auth.dart';
 import 'brain.dart';
 import 'gemini.dart';
 import 'link.dart';
+import 'live.dart';
 import 'native.dart';
 import 'persona.dart';
+import 'speaker.dart';
 import 'store.dart';
 import 'strings.dart';
 import 'themes.dart';
+import 'tools.dart';
 import 'voice.dart';
 
 enum VoiceState { idle, listening, thinking, speaking }
@@ -41,6 +46,7 @@ const _defaults = <String, dynamic>{
   'hands_free': true, // keep listening and answer when called by name
   'announce': true, // say incoming calls/messages aloud (Android)
   'license_key': '',
+  'live_mode': true, // Gemini Live: replies start in ~1 s and tasks run as functions
 };
 
 const voices = <String, bool>{'aoede': true, 'kore': true, 'leda': true, 'puck': false, 'charon': false}; // true = female
@@ -78,6 +84,33 @@ class AppState extends ChangeNotifier {
   bool _summarising = false;
   Pairing? pendingPairing; // PC: QR being shown, waiting for the phone
   final Map<String, DateTime> _recentEvents = {};
+
+  // ---- Gemini Live (fast voice) ----
+  final _mic = LiveMic();
+  final _speaker = PcmSpeaker();
+  LiveSession? _live;
+  Future<bool>? _connecting;
+  Completer<bool>? _liveExit; // completes when the live loop should end (true = stopped by the person)
+  DateTime _liveBlockedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _liveUnavailable = false; // this key has no Live model
+  bool _proactiveOk = true;
+  final List<Uint8List> _preroll = [];
+  final List<Uint8List> _queued = [];
+  bool _sending = false;
+  DateTime _lastLoud = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _segStart = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastHeard = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastTalk = DateTime.fromMillisecondsSinceEpoch(0);
+  double _noise = -50, _echo = -60;
+  final _heardBuf = StringBuffer();
+  final _saidBuf = StringBuffer();
+  bool _turnHadAudio = false;
+  Timer? _liveTimer;
+  Timer? _backToListen;
+  final List<DateTime> _liveFailures = [];
+  String liveModelName = '';
+  bool get liveOn => _live?.isOpen ?? false;
+  int _loopGen = 0;
 
   bool get loggedIn => session != null;
   String get uid => session!.uid;
@@ -120,6 +153,7 @@ class AppState extends ChangeNotifier {
   Future<void> _loadUser() async {
     final saved = await store.readJson(uid, 'profile.json');
     profile = {..._defaults, ...saved};
+    if (profile['persona'] == 'partner') profile['persona'] = normalizePersona('partner', voices[profile['voice']] ?? true);
     if ((profile['display_name'] as String).isEmpty && session!.displayName.isNotEmpty) {
       profile['display_name'] = session!.displayName;
     }
@@ -184,6 +218,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     await store.writeJson(uid, 'profile.json', profile);
     if (key == 'hands_free') value == true ? unawaited(startLoop()) : await stopLoop();
+    if (key == 'live_mode' && _loopOn) {
+      await stopLoop();
+      await Future.delayed(const Duration(milliseconds: 400));
+      unawaited(startLoop());
+    }
+    // a new voice/role/name takes effect from the next live connection
+    if (['persona', 'voice', 'call_me', 'speech_language', 'display_name'].contains(key) && _live != null) {
+      unawaited(_live!.close());
+      _live = null;
+      if (_loopOn) unawaited(_ensureLive());
+    }
   }
 
   Future<void> rename(String newName) async {
@@ -196,6 +241,10 @@ class AppState extends ChangeNotifier {
     profile = {...profile, 'assistant_name': n, 'renames_used': (profile['renames_used'] as int) + 1};
     notifyListeners();
     await store.writeJson(uid, 'profile.json', profile);
+    if (_live != null) {
+      unawaited(_live!.close());
+      _live = null;
+    }
   }
 
   /// Licence key: format is checked now; it is verified online once the licence server is connected.
@@ -250,6 +299,38 @@ class AppState extends ChangeNotifier {
     await store.writeJson(uid, 'memory.json', {'items': memories});
   }
 
+  /// Tommy corrects its own memory ("না, আমার অফিস এখন গুলশানে"). Returns false if nothing matched (then saved as new).
+  Future<bool> updateMemory(String oldWords, String newText) async {
+    final o = oldWords.trim().toLowerCase();
+    final n = newText.trim();
+    if (n.isEmpty) return false;
+    if (isSensitive(n)) throw AppError('SENSITIVE');
+    final i = o.isEmpty ? -1 : memories.indexWhere((m) => (m['text'] as String).toLowerCase().contains(o));
+    if (i < 0) {
+      await addMemory(n);
+      return false;
+    }
+    memories = [...memories];
+    memories[i] = {...memories[i], 'text': n};
+    notifyListeners();
+    await store.writeJson(uid, 'memory.json', {'items': memories});
+    return true;
+  }
+
+  /// Deletes memories containing these words. Returns how many.
+  Future<int> forgetMemory(String words) async {
+    final w = words.trim().toLowerCase();
+    if (w.length < 2) return 0;
+    final before = memories.length;
+    memories = memories.where((m) => !(m['text'] as String).toLowerCase().contains(w)).toList();
+    final n = before - memories.length;
+    if (n > 0) {
+      notifyListeners();
+      await store.writeJson(uid, 'memory.json', {'items': memories});
+    }
+    return n;
+  }
+
   // ---------- talking ----------
   void _setVoice(VoiceState s, [String st = '']) {
     voice = s;
@@ -257,36 +338,42 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _system() => buildSystemPrompt(
+  String _system({bool live = false}) => buildSystemPrompt(
         name: name,
         female: voiceFemale,
         persona: profile['persona'] as String,
         userName: userName,
         callMe: profile['call_me'] as String,
         speechLanguage: profile['speech_language'] as String,
-        memories: memories.map((m) => m['text'] as String).take(40).toList(),
-        handsFree: _loopOn,
+        memories: memories.where((m) => m['kind'] != 'rule').map((m) => m['text'] as String).take(40).toList(),
+        rules: memories.where((m) => m['kind'] == 'rule').map((m) => m['text'] as String).take(30).toList(),
+        handsFree: live ? profile['hands_free'] == true : _loopOn,
         platform: Platform.isAndroid ? 'android' : 'windows',
         now: DateTime.now(),
         linkedDevice: link == null ? '' : '${link!.peer} ${peerOnline ? 'online' : 'offline'}',
         pastPoints: pastPoints,
+        live: live,
+        recent: live ? (chat.length > 10 ? chat.sublist(chat.length - 10) : chat) : const [],
       );
 
-  /// Mic button: if the always-listening loop is running, it stops/starts it; otherwise listens once.
+  /// Mic button: if the listening loop is running, it stops it; otherwise starts listening.
   Future<void> micPressed() async {
     if (!geminiActive) {
       _setVoice(VoiceState.idle, t('need_key'));
       return;
     }
-    if (voice == VoiceState.speaking) {
+    if (voice == VoiceState.speaking || _speaker.speaking) {
       await io.stopSpeaking();
+      await _speaker.stop();
+      if (_loopOn) _setVoice(VoiceState.listening, t('idle'));
       return;
     }
     if (_loopOn) {
       await stopLoop();
       return;
     }
-    if (profile['hands_free'] == true) {
+    if (profile['hands_free'] == true || _useLive) {
+      _lastTalk = DateTime.now(); // pressed the button = talking to Tommy now
       unawaited(startLoop());
       return;
     }
@@ -300,9 +387,18 @@ class AppState extends ChangeNotifier {
       _setVoice(VoiceState.idle, t('need_key'));
       return;
     }
+    if (_loopOn && _useLive && await _ensureLive()) {
+      _lastTalk = DateTime.now();
+      _heardBuf.write(text.trim());
+      _live!.sendText(text.trim());
+      return;
+    }
     io.cancel();
     await _process(typed: text.trim(), handsFree: false);
   }
+
+  bool get _useLive =>
+      profile['live_mode'] == true && !_liveUnavailable && DateTime.now().isAfter(_liveBlockedUntil);
 
   /// Always-listening loop (while the app runs; on Android also in the background via a foreground service).
   Future<void> startLoop() async {
@@ -312,29 +408,350 @@ class AppState extends ChangeNotifier {
       return;
     }
     _loopOn = true;
+    final gen = ++_loopGen;
     await Native.requestPermissions();
     await Native.startKeepAlive(name, t('bg_listening'));
     notifyListeners();
     var failures = 0;
-    while (_loopOn && geminiActive) {
+    while (_loopOn && geminiActive && gen == _loopGen) {
+      if (_useLive) {
+        final byPerson = await _runLive();
+        if (byPerson) break;
+        continue; // Live not possible right now → classic mode below until it is
+      }
       try {
         await _turn(handsFree: true, waitFor: const Duration(seconds: 25));
         failures = 0;
+        if (profile['hands_free'] != true && DateTime.now().difference(_lastTalk) > const Duration(seconds: 60)) break;
       } catch (e) {
         failures++;
         _setVoice(VoiceState.idle, err(e));
         await Future.delayed(Duration(seconds: failures > 3 ? 20 : 3));
       }
     }
+    if (gen != _loopGen) return; // a newer loop has started meanwhile
     _loopOn = false;
+    await Native.stopKeepAlive();
     _setVoice(VoiceState.idle);
   }
 
   Future<void> stopLoop() async {
+    _loopGen++;
     _loopOn = false;
     io.cancel();
+    if (_liveExit != null && !_liveExit!.isCompleted) _liveExit!.complete(true);
     await Native.stopKeepAlive();
     _setVoice(VoiceState.idle);
+  }
+
+  // ---------- Gemini Live loop ----------
+  /// Streams the mic to Gemini Live. Returns true when the person stopped it, false if Live failed.
+  Future<bool> _runLive() async {
+    final exit = Completer<bool>();
+    _liveExit = exit;
+    try {
+      await _mic.start(_onMicChunk);
+    } catch (e) {
+      _liveBlockedUntil = DateTime.now().add(const Duration(minutes: 10));
+      return false;
+    }
+    _setVoice(VoiceState.listening, t('idle'));
+    unawaited(_ensureLive()); // connect early so the first answer is fast
+    _liveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _liveTick());
+    final byPerson = await exit.future;
+    _liveTimer?.cancel();
+    _backToListen?.cancel();
+    await _mic.stop();
+    await _speaker.stop();
+    await _live?.close();
+    _live = null;
+    _sending = false;
+    _preroll.clear();
+    _queued.clear();
+    io.level.add(0);
+    return byPerson;
+  }
+
+  void _liveTick() {
+    final now = DateTime.now();
+    final l = _live;
+    // close an idle connection (saves quota); the next "Hey Tommy" reconnects in a moment
+    if (l != null && !_sending && !_speaker.speaking && now.difference(l.lastActivity) > const Duration(seconds: 120)) {
+      unawaited(l.close());
+      _live = null;
+      notifyListeners();
+    }
+    // button-started conversation (hands-free off) ends after a minute of silence
+    if (profile['hands_free'] != true && !_sending && !_speaker.speaking &&
+        now.difference(_lastTalk) > const Duration(seconds: 60)) {
+      unawaited(stopLoop());
+    }
+  }
+
+  void _onMicChunk(Uint8List pcm, double db) {
+    final now = DateTime.now();
+    io.level.add(((db + 60) / 60).clamp(0.0, 1.0));
+    final talking = _speaker.speaking;
+    final thr = (_noise + 12).clamp(-50.0, -22.0);
+    // while Tommy talks, only a clearly louder voice counts (so its own echo doesn't interrupt it)
+    final need = talking ? math.max(thr + 12, _echo + 10) : thr;
+    final loud = db > need;
+    if (talking && !_sending) _echo = _echo * 0.9 + db * 0.1;
+    if (!talking && !_sending && !loud) _noise = _noise * 0.95 + db * 0.05;
+
+    _preroll.add(pcm);
+    var bytes = _preroll.fold<int>(0, (a, b) => a + b.length);
+    while (bytes > 16000 && _preroll.length > 1) {
+      bytes -= _preroll.first.length; // keep ~0.5 s before the speech starts
+      _preroll.removeAt(0);
+    }
+
+    if (loud) {
+      _lastLoud = now;
+      if (!_sending) {
+        _sending = true;
+        _segStart = now;
+        // words Tommy decided to ignore earlier must not stick to the next real question
+        if (!_turnHadAudio && now.difference(_lastHeard) > const Duration(seconds: 6)) _heardBuf.clear();
+        final pre = List<Uint8List>.of(_preroll)..removeLast();
+        for (final p in pre) {
+          _sendOrQueue(p);
+        }
+        unawaited(_ensureLive());
+      }
+    }
+    if (!_sending) return;
+    _sendOrQueue(pcm);
+    // music/TV that never turns into words: treat it as background noise and stop sending
+    if (now.difference(_segStart) > const Duration(seconds: 12) && _lastHeard.isBefore(_segStart)) {
+      _noise = db - 2;
+      _sending = false;
+      _live?.audioEnded();
+      return;
+    }
+    if (now.difference(_lastLoud) > const Duration(milliseconds: 1200)) {
+      _sending = false;
+      _live?.audioEnded();
+    }
+  }
+
+  void _sendOrQueue(Uint8List pcm) {
+    final l = _live;
+    if (l != null && l.isOpen) {
+      l.sendAudio(pcm);
+    } else {
+      _queued.add(pcm);
+      var total = _queued.fold<int>(0, (a, b) => a + b.length);
+      while (total > 32000 * 8 && _queued.isNotEmpty) {
+        total -= _queued.first.length;
+        _queued.removeAt(0);
+      }
+    }
+  }
+
+  Future<bool> _ensureLive() {
+    if (_live?.isOpen == true) return Future.value(true);
+    return _connecting ??= _openLive().whenComplete(() => _connecting = null);
+  }
+
+  Future<bool> _openLive() async {
+    final brain = _brain;
+    if (brain == null || !_loopOn) return false;
+    String? model;
+    try {
+      model = await brain.liveModel();
+    } catch (e) {
+      _liveFailed(e);
+      return false;
+    }
+    if (model == null) {
+      _liveUnavailable = true; // this key has no Live model → classic mode
+      _exitLive();
+      return false;
+    }
+    liveModelName = model;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final session = LiveSession(
+        apiKey: brain.key,
+        model: model,
+        system: _system(live: true),
+        voiceName: geminiVoice[profile['voice']] ?? 'Aoede',
+        functions: toolDeclarations,
+        proactive: _proactiveOk,
+        onAudio: _onLiveAudio,
+        onHeard: (tx) {
+          _lastHeard = DateTime.now();
+          _heardBuf.write(tx);
+          if (!_speaker.speaking) {
+            status = _heardBuf.toString();
+            notifyListeners();
+          }
+        },
+        onSaid: (tx) {
+          _saidBuf.write(tx);
+          status = _saidBuf.toString();
+          notifyListeners();
+        },
+        onTurnComplete: _onLiveTurnDone,
+        onInterrupted: () {
+          unawaited(_speaker.stop());
+          _onLiveTurnDone();
+        },
+        onCall: _runLiveTool,
+        onClosed: (e) {
+          _live = null;
+          notifyListeners();
+          _liveFailed(e);
+        },
+      );
+      try {
+        await session.connect();
+        _live = session;
+        _liveFailures.clear();
+        for (final q in _queued) {
+          session.sendAudio(q);
+        }
+        _queued.clear();
+        if (!_sending) session.audioEnded();
+        notifyListeners();
+        return true;
+      } on LiveError catch (e) {
+        if (e.code == 'FAILED' && _proactiveOk) {
+          _proactiveOk = false; // older Live models don't know "proactive audio" → retry without it
+          continue;
+        }
+        _liveFailed(e);
+        return false;
+      } catch (e) {
+        _liveFailed(e);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  void _liveFailed(Object e) {
+    final code = e is LiveError ? e.code : (e is BrainError ? e.code : 'FAILED');
+    if (code == 'KEY_INVALID') {
+      _setVoice(VoiceState.idle, trError(lang, 'AI_KEY_INVALID'));
+      _liveBlockedUntil = DateTime.now().add(const Duration(minutes: 30));
+      _exitLive();
+      return;
+    }
+    if (code == 'QUOTA') {
+      status = trError(lang, 'AI_QUOTA');
+      notifyListeners();
+      _liveBlockedUntil = DateTime.now().add(const Duration(minutes: 10));
+      _exitLive();
+      return;
+    }
+    _liveFailures.add(DateTime.now());
+    _liveFailures.removeWhere((d) => DateTime.now().difference(d) > const Duration(minutes: 2));
+    if (_liveFailures.length >= 3) {
+      _liveBlockedUntil = DateTime.now().add(const Duration(minutes: 5)); // keep working in classic mode meanwhile
+      _exitLive();
+    }
+  }
+
+  void _exitLive() {
+    if (_liveExit != null && !_liveExit!.isCompleted) _liveExit!.complete(false);
+  }
+
+  void _onLiveAudio(Uint8List pcm) {
+    _backToListen?.cancel();
+    _turnHadAudio = true;
+    _lastTalk = DateTime.now();
+    if (voice != VoiceState.speaking) {
+      voice = VoiceState.speaking;
+      notifyListeners();
+    }
+    unawaited(_speaker.add(pcm));
+  }
+
+  void _onLiveTurnDone() {
+    unawaited(_speaker.finish());
+    final heard = _heardBuf.toString().trim();
+    final said = _saidBuf.toString().trim();
+    _heardBuf.clear();
+    _saidBuf.clear();
+    if (said.isNotEmpty || _turnHadAudio) {
+      _lastTalk = DateTime.now();
+      unawaited(_addTurn(heard, said));
+    }
+    _turnHadAudio = false;
+    _backToListen?.cancel();
+    final wait = _speaker.endsAt.difference(DateTime.now());
+    _backToListen = Timer(wait.isNegative ? Duration.zero : wait, () {
+      if (_loopOn) _setVoice(VoiceState.listening, said.isNotEmpty ? said : t('idle'));
+    });
+  }
+
+  Future<void> _addTurn(String heard, String said) async {
+    if (heard.isEmpty && said.isEmpty) return;
+    chat = [
+      ...chat,
+      if (heard.isNotEmpty) {'role': 'user', 'text': heard},
+      if (said.isNotEmpty) {'role': 'model', 'text': said},
+    ];
+    if (chat.length > 60) chat = chat.sublist(chat.length - 60);
+    notifyListeners();
+    unawaited(store.writeJson(uid, 'chat.json', {'items': chat}));
+    if (heard.isNotEmpty) await archive?.add('user', heard);
+    if (said.isNotEmpty) await archive?.add('model', said);
+    unawaited(summariseFinished());
+  }
+
+  /// Runs one function Gemini Live asked for and tells it how it went.
+  Future<Map<String, dynamic>> _runLiveTool(LiveCall c) async {
+    final a = c.args;
+    String arg(String k) => (a[k] ?? '').toString().trim();
+    _lastTalk = DateTime.now();
+    switch (c.name) {
+      case 'remember':
+        try {
+          await addMemory(arg('fact'), kind: arg('kind') == 'rule' ? 'rule' : 'personal');
+          return ok({'saved': arg('fact')});
+        } catch (e) {
+          return fail(err(e));
+        }
+      case 'update_memory':
+        return await updateMemory(arg('old'), arg('new')) ? ok() : fail('That memory was not found, so it was saved as new.');
+      case 'forget':
+        final n = await forgetMemory(arg('fact'));
+        return n > 0 ? ok({'deleted': n}) : fail('No memory matched "${arg('fact')}".');
+      case 'recall':
+        final found = await archive?.search(arg('query')) ?? const <String>[];
+        return found.isEmpty ? fail('Nothing found in earlier conversations.') : ok({'found': found});
+      case 'research':
+        final brain = _brain;
+        if (brain == null) return fail('no AI key');
+        final deep = a['deep'] == true;
+        status = t(deep ? 'deep_researching' : 'researching');
+        notifyListeners();
+        try {
+          final text = await brain.research(arg('question'), deep: deep, language: profile['speech_language'] as String);
+          if (text.isEmpty) return fail('Nothing found.');
+          await _addTurn('', text);
+          return ok({'answer': text.length > 4000 ? text.substring(0, 4000) : text});
+        } catch (e) {
+          return fail(err(e));
+        }
+      case 'stop_listening':
+        Timer(const Duration(seconds: 3), () => unawaited(stopLoop()));
+        return ok();
+    }
+    final device = arg('device');
+    if (device == 'pc' || device == 'phone') {
+      if (device != DeviceLink.thisDevice) {
+        if (link == null) return fail('No other device is linked. Link it with the QR code in Settings.');
+        if (!peerOnline) return fail('The $device is offline.');
+        final sent = await link!.sendCommand(c.name, jsonEncode(a), '__json');
+        return sent ? ok({'sent_to': device}) : fail('Could not reach the $device.');
+      }
+    }
+    final r = await runDeviceTool(c.name, a);
+    // the phone shows the other app now; come back to listening right away
+    return r;
   }
 
   Future<void> _turn({required bool handsFree, Duration waitFor = const Duration(seconds: 8)}) async {
@@ -381,6 +798,31 @@ class AppState extends ChangeNotifier {
         if (r.action == 'recall') r = BrainReply(heard: r.heard, reply: r.reply, remember: r.remember);
         await pre; // finish "let me remember…" before the answer
       }
+      if ((r.action == 'research' || r.action == 'deep_research') && !r.ignore) {
+        final deep = r.action == 'deep_research';
+        final pre = r.reply.isNotEmpty ? _say(r.reply) : Future<void>.value();
+        status = t(deep ? 'deep_researching' : 'researching');
+        notifyListeners();
+        final question = r.arg.isNotEmpty ? r.arg : r.heard;
+        final answer = await brain.research(question, deep: deep, language: profile['speech_language'] as String);
+        await pre;
+        final heard = r.heard.isNotEmpty ? r.heard : (typed ?? question);
+        await _addTurn(heard, answer.isEmpty ? '…' : answer);
+        r = await brain.think(
+          system: _system(),
+          history: chat,
+          typed: heard,
+          event: '[Research results — the full answer is already shown on screen. Say the main answer in 2-3 short '
+              'spoken sentences, then "বিস্তারিত স্ক্রিনে দিলাম".]\n$answer',
+        );
+        _pendingEvent = null;
+        if (r.reply.isNotEmpty) {
+          chat = [...chat, {'role': 'model', 'text': r.reply}];
+          await _say(r.reply);
+        }
+        _setVoice(handsFree ? VoiceState.listening : VoiceState.idle, '');
+        return;
+      }
       if (r.ignore || (r.reply.isEmpty && r.action == 'none')) {
         _setVoice(handsFree ? VoiceState.listening : VoiceState.idle, handsFree ? t('idle') : '');
         return;
@@ -397,7 +839,9 @@ class AppState extends ChangeNotifier {
       await archive?.add('model', r.reply);
       if (r.remember.trim().isNotEmpty) {
         try {
-          await addMemory(r.remember, kind: 'personal');
+          final rule = RegExp(r'^(rule|নিয়ম)\s*[:：-]', caseSensitive: false).hasMatch(r.remember.trim()) ||
+              RegExp(r'(next time|এরপর|পরের বার|সবসময়|always)', caseSensitive: false).hasMatch(r.remember);
+          await addMemory(r.remember, kind: rule ? 'rule' : 'personal');
         } catch (_) {}
       }
       if (r.action == 'stop') {
@@ -528,6 +972,17 @@ class AppState extends ChangeNotifier {
 
   Future<void> _onLinkMessage(Map<String, dynamic> m) async {
     if (m['type'] != 'cmd') return;
+    if (m['text'] == '__json') {
+      Map<String, dynamic> args = {};
+      try {
+        args = Map<String, dynamic>.from(jsonDecode((m['arg'] ?? '{}').toString()) as Map);
+      } catch (_) {}
+      args.remove('device');
+      status = t('remote_cmd', vars: {'dev': t(DeviceLink.thisDevice == 'pc' ? 'dev_phone' : 'dev_pc')});
+      notifyListeners();
+      await runDeviceTool((m['action'] ?? '').toString(), args);
+      return;
+    }
     final r = BrainReply(action: (m['action'] ?? 'none').toString(), arg: (m['arg'] ?? '').toString(),
         text: (m['text'] ?? '').toString());
     status = t('remote_cmd', vars: {'dev': t(DeviceLink.thisDevice == 'pc' ? 'dev_phone' : 'dev_pc')});
@@ -555,6 +1010,12 @@ class AppState extends ChangeNotifier {
         final text = (e['text'] ?? '').toString();
         _pendingEvent = 'New $app message from "$who": "$text". They may want you to reply (whatsapp action) or ignore it.';
         line = t('msg_announce', vars: {'who': who, 'app': app, 'text': text.length > 120 ? '${text.substring(0, 120)}…' : text, 'me': callMe});
+      }
+      if (_loopOn && _useLive && await _ensureLive()) {
+        // Live: Tommy announces it in its own voice and listens for the answer right away
+        _lastTalk = DateTime.now();
+        _live!.sendText('[Current event: $_pendingEvent] Tell me now in one short sentence, like: "$line"');
+        return;
       }
       io.cancel(); // stop the current listen so we can speak
       await Future.delayed(const Duration(milliseconds: 300));

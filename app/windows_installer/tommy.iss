@@ -1,6 +1,6 @@
 ; Inno Setup script → TommySetup.exe (customer just clicks Next → Install)
 #define AppName "Tommy"
-#define AppVersion "0.5.0"
+#define AppVersion "0.6.0"
 [Setup]
 AppId={{40CA4EB4-50A0-4123-B5A9-5E745912CF77}
 AppName={#AppName}

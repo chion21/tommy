@@ -7,6 +7,8 @@ import 'package:tommy/core/persona.dart';
 import 'package:tommy/core/gemini.dart';
 import 'package:tommy/core/strings.dart';
 import 'package:tommy/core/themes.dart';
+import 'package:tommy/core/tools.dart';
+import 'package:tommy/core/voice.dart';
 
 void main() {
   test('strings exist in all three languages', () {
@@ -39,7 +41,12 @@ void main() {
           speechLanguage: 'auto', memories: const ['likes tea'], handsFree: true, platform: 'android', now: DateTime(2026));
       expect(s.contains('রিয়া'), isTrue);
       expect(s.contains('likes tea'), isTrue);
-      if (p == 'partner') expect(s.contains('no sexual or explicit content'), isTrue);
+      if (isPartner(p)) expect(s.contains('no sexual or explicit content'), isTrue);
+      final l = buildSystemPrompt(name: 'টমি', female: true, persona: p, userName: '', callMe: 'স্যার',
+          speechLanguage: 'bn', memories: const [], rules: const ['play songs directly'], handsFree: true,
+          platform: 'android', now: DateTime(2026), live: true);
+      expect(l.contains('play_youtube'), isTrue);
+      expect(l.contains('play songs directly'), isTrue);
     }
   });
 
@@ -52,5 +59,20 @@ void main() {
   test('licence format', () {
     expect(licenseFormat.hasMatch('TOMMY-ABCD-EFGH-JKLM'), isTrue);
     expect(licenseFormat.hasMatch('TOMMY-1234'), isFalse);
+  });
+
+  test('tool declarations are well formed', () {
+    final names = toolDeclarations.map((d) => d['name']).toList();
+    expect(names.toSet().length, names.length);
+    expect(names, containsAll(['play_youtube', 'research', 'remember', 'update_memory', 'tap']));
+  });
+
+  test('old partner role maps to girlfriend/boyfriend', () {
+    expect(normalizePersona('partner', true), 'girlfriend');
+    expect(normalizePersona('partner', false), 'boyfriend');
+  });
+
+  test('loudness of silence is very low', () {
+    expect(LiveMic.dbfs(Uint8List(3200)), lessThan(-90));
   });
 }
