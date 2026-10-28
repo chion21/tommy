@@ -26,6 +26,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _keyCtrl = TextEditingController();
   final _licCtrl = TextEditingController();
+  final _claudeCtrl = TextEditingController();
   bool _checking = false;
 
   AppState get app => widget.app;
@@ -40,6 +41,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     setState(() => _checking = false);
     if (res == KeyCheck.valid) _keyCtrl.clear();
+    _toast(app.t(switch (res) { KeyCheck.valid => 'key_ok', KeyCheck.invalid => 'key_bad', KeyCheck.network => 'key_net' }));
+  }
+
+  Future<void> _verifyClaude() async {
+    setState(() => _checking = true);
+    final res = await app.activateClaudeKey(_claudeCtrl.text);
+    if (!mounted) return;
+    setState(() => _checking = false);
+    if (res == KeyCheck.valid) _claudeCtrl.clear();
     _toast(app.t(switch (res) { KeyCheck.valid => 'key_ok', KeyCheck.invalid => 'key_bad', KeyCheck.network => 'key_net' }));
   }
 
@@ -131,6 +141,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ]),
             ),
           ),
+
+          // ---------- brain: Gemini or Claude ----------
+          _section(app.t('brain_title'), [
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final b in ['gemini', 'claude'])
+                ChoiceChip(
+                  label: Text(app.t('brain_$b')),
+                  selected: (p['brain'] ?? 'gemini') == b,
+                  onSelected: (b == 'claude' && !app.claudeActive) ? null : (_) => app.setPref('brain', b),
+                ),
+            ]),
+            if (p['brain'] == 'claude' && app.claudeActive)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(spacing: 8, children: [
+                  for (final m in ['fast', 'smart'])
+                    ChoiceChip(
+                      label: Text(app.t('claude_$m')),
+                      selected: (p['claude_model'] ?? 'fast') == m,
+                      onSelected: (_) => app.setPref('claude_model', m),
+                    ),
+                ]),
+              ),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    const Icon(Icons.psychology_outlined),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(app.t('claude_title'), style: const TextStyle(fontWeight: FontWeight.w700))),
+                    Chip(
+                      label: Text(app.claudeActive ? app.t('active') : app.t('inactive')),
+                      backgroundColor: (app.claudeActive ? Colors.green : Colors.grey).withValues(alpha: 0.2),
+                    ),
+                  ]),
+                  if (app.claudeActive) ...[
+                    Text(app.claudeMasked, style: const TextStyle(fontFamily: 'monospace')),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                          onPressed: app.removeClaudeKey, icon: const Icon(Icons.delete_outline), label: Text(app.t('remove_key'))),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Text(app.t('claude_hint'), style: const TextStyle(color: Colors.white70)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _claudeCtrl,
+                      obscureText: true,
+                      decoration: const InputDecoration(hintText: 'sk-ant-…', border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      TextButton(
+                        onPressed: () => launchUrl(Uri.parse('https://console.anthropic.com/settings/keys'),
+                            mode: LaunchMode.externalApplication),
+                        child: Text(app.t('get_key')),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: _checking ? null : _verifyClaude,
+                        child: Text(_checking ? app.t('checking') : app.t('verify')),
+                      ),
+                    ]),
+                  ],
+                ]),
+              ),
+            ),
+          ]),
 
           // ---------- licence / activation (from v0.1) ----------
           Card(

@@ -10,6 +10,7 @@ import 'actions.dart';
 import 'archive.dart';
 import 'auth.dart';
 import 'brain.dart';
+import 'claude.dart';
 import 'gemini.dart';
 import 'link.dart';
 import 'live.dart';
@@ -48,6 +49,8 @@ const _defaults = <String, dynamic>{
   'announce': true, // say incoming calls/messages aloud (Android)
   'license_key': '',
   'light': 'theme', // edge light: theme | a colour | mix (RGB) | off
+  'brain': 'gemini', // gemini (fast live voice) | claude (Claude thinks, Gemini hears & speaks)
+  'claude_model': 'fast', // fast = Haiku · smart = Sonnet
   'live_mode': true,
   'voice_quality': 'sweet', // sweet = native-audio voice (as in v0.6) · fast = quickest model, plainer voice // Gemini Live: replies start in ~1 s and tasks run as functions
 };
@@ -77,6 +80,11 @@ class AppState extends ChangeNotifier {
   String status = ''; // short line under the orb (errors, hints)
 
   Brain? _brain;
+  ClaudeBrain? _claude;
+  bool claudeActive = false;
+  String claudeMasked = '';
+  /// Claude thinks, Gemini hears and speaks (needs both keys).
+  bool get useClaude => profile['brain'] == 'claude' && _claude != null && _brain != null;
   bool _loopOn = false;
   bool _busy = false;
   String? _pendingEvent; // incoming call/message waiting for the person's decision
@@ -175,6 +183,10 @@ class AppState extends ChangeNotifier {
     geminiActive = key.isNotEmpty;
     geminiMasked = geminiActive ? maskKey(key) : '';
     _brain = geminiActive ? Brain(key) : null;
+    final ck = await store.claudeKey(uid) ?? '';
+    claudeActive = ck.isNotEmpty;
+    claudeMasked = claudeActive ? maskKey(ck) : '';
+    _claude = claudeActive ? ClaudeBrain(ck, smart: profile['claude_model'] == 'smart') : null;
     notifyListeners();
     _startEvents();
     unawaited(_startLink());
@@ -227,6 +239,9 @@ class AppState extends ChangeNotifier {
     pastPoints = [];
     geminiActive = false;
     _brain = null;
+    _claude = null;
+    claudeActive = false;
+    claudeMasked = '';
     voice = VoiceState.idle;
     notifyListeners();
   }
@@ -237,7 +252,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     await store.writeJson(uid, 'profile.json', profile);
     if (key == 'hands_free') value == true ? unawaited(startLoop()) : await stopLoop();
-    if (key == 'live_mode' && _loopOn) {
+    if (key == 'claude_model' && _claude != null) {
+      final ck = await store.claudeKey(uid) ?? '';
+      if (ck.isNotEmpty) _claude = ClaudeBrain(ck, smart: value == 'smart');
+    }
+    if ((key == 'live_mode' || key == 'brain') && _loopOn) {
       await stopLoop();
       await Future.delayed(const Duration(milliseconds: 400));
       unawaited(startLoop());
@@ -286,6 +305,29 @@ class AppState extends ChangeNotifier {
       if (profile['hands_free'] == true) unawaited(startLoop());
     }
     return res;
+  }
+
+  // ---------- Claude API key (optional brain) ----------
+  Future<KeyCheck> activateClaudeKey(String key) async {
+    final k = key.trim();
+    final res = await checkClaudeKey(k);
+    if (res == KeyCheck.valid) {
+      await store.setClaudeKey(uid, k);
+      claudeActive = true;
+      claudeMasked = maskKey(k);
+      _claude = ClaudeBrain(k, smart: profile['claude_model'] == 'smart');
+      notifyListeners();
+    }
+    return res;
+  }
+
+  Future<void> removeClaudeKey() async {
+    await store.deleteClaudeKey(uid);
+    claudeActive = false;
+    claudeMasked = '';
+    _claude = null;
+    if (profile['brain'] == 'claude') await setPref('brain', 'gemini');
+    notifyListeners();
   }
 
   Future<void> removeGeminiKey() async {
@@ -417,7 +459,7 @@ class AppState extends ChangeNotifier {
   }
 
   bool get _useLive =>
-      profile['live_mode'] == true && !_liveUnavailable && DateTime.now().isAfter(_liveBlockedUntil);
+      !useClaude && profile['live_mode'] == true && !_liveUnavailable && DateTime.now().isAfter(_liveBlockedUntil);
 
   /// Always-listening loop (while the app runs; on Android also in the background via a foreground service).
   Future<void> startLoop() async {
@@ -778,17 +820,22 @@ class AppState extends ChangeNotifier {
     }
     _turnAllowed = true;
     _lastTalk = DateTime.now();
-    final device = (c.args['device'] ?? '').toString();
+    return _dispatchTool(c.name, c.args);
+  }
+
+  /// Runs an action here, or sends it to the linked PC/phone.
+  Future<Map<String, dynamic>> _dispatchTool(String name, Map<String, dynamic> args) async {
+    final device = (args['device'] ?? '').toString();
     if ((device == 'pc' || device == 'phone') && device != DeviceLink.thisDevice) {
       if (link == null) return fail('No other device is linked. Link it with the QR code in Settings.');
       if (!peerOnline) return fail('The $device is offline.');
-      final sent = await link!.sendCommand(c.name, jsonEncode(c.args), '__json');
+      final sent = await link!.sendCommand(name, jsonEncode(args), '__json');
       return sent ? ok({'sent_to': device, 'note': 'The other device does it now; its result is not reported back.'})
           : fail('Could not reach the $device.');
     }
     status = t('working');
     notifyListeners();
-    final r = await runTool(c.name, c.args);
+    final r = await runTool(name, args);
     if (r['ok'] != true) status = t('stuck');
     notifyListeners();
     return r;
@@ -869,6 +916,7 @@ class AppState extends ChangeNotifier {
   Future<void> _process({Uint8List? wav, String? typed, required bool handsFree}) async {
     final brain = _brain;
     if (brain == null) return;
+    if (useClaude) return _processClaude(brain, wav: wav, typed: typed, handsFree: handsFree);
     _busy = true;
     try {
       _setVoice(VoiceState.thinking, t('thinking'));
@@ -960,6 +1008,46 @@ class AppState extends ChangeNotifier {
     } finally {
       _busy = false;
       unawaited(summariseFinished());
+    }
+  }
+
+  /// Claude as the brain: Gemini writes down what was said → Claude thinks and does the actions → Gemini voice speaks.
+  Future<void> _processClaude(Brain gemini, {Uint8List? wav, String? typed, required bool handsFree}) async {
+    final claude = _claude!;
+    _busy = true;
+    try {
+      var heard = typed ?? '';
+      if (wav != null) {
+        _setVoice(VoiceState.thinking, t('thinking'));
+        heard = await gemini.transcribe(wav);
+      }
+      if (heard.trim().isEmpty ||
+          (wav != null && handsFree && !_conversationActive && !_calledByName(heard) && _pendingEvent == null)) {
+        _setVoice(handsFree ? VoiceState.listening : VoiceState.idle, handsFree ? t('idle') : '');
+        return; // not meant for Tommy
+      }
+      _lastTalk = DateTime.now();
+      _setVoice(VoiceState.thinking, heard);
+      final event = _pendingEvent;
+      _pendingEvent = null;
+      var pending = Future<void>.value();
+      final reply = await claude.chat(
+        system: _system(live: true),
+        history: chat,
+        userText: event == null ? heard : '[Current event: $event]\n$heard',
+        tools: claudeTools(toolDeclarations),
+        runTool: _dispatchTool,
+        onSayNow: (txt) => pending = pending.then((_) => _say(txt)),
+      );
+      await pending;
+      await _addTurn(heard, reply);
+      _lastTalk = DateTime.now();
+      if (reply.isNotEmpty) await _say(reply);
+      _setVoice(handsFree && _loopOn ? VoiceState.listening : VoiceState.idle, '');
+    } on ClaudeError catch (e) {
+      _setVoice(VoiceState.idle, trError(lang, 'CLAUDE_${e.code}'));
+    } finally {
+      _busy = false;
     }
   }
 

@@ -137,6 +137,32 @@ class Brain {
     return _liveModel;
   }
 
+  /// Speech → text only (used when Claude is the brain). Empty if nothing was said.
+  Future<String> transcribe(Uint8List wav) async {
+    await _pickModels();
+    final data = await _call('models/$_chatModel:generateContent', {
+      'contents': [
+        {
+          'parts': [
+            {'inlineData': {'mimeType': 'audio/wav', 'data': base64Encode(wav)}},
+            {'text': 'Write down exactly what is said in this recording, in the original language and script '
+                '(Bangla in Bangla script). If there is no clear speech (silence, noise, music, TV), return an empty string. '
+                'Return only the words.'}
+          ]
+        }
+      ],
+      'generationConfig': {
+        'temperature': 0,
+        if (_chatModel!.startsWith('gemini-2.5')) 'thinkingConfig': {'thinkingBudget': 0},
+      },
+    }, timeout: const Duration(seconds: 25));
+    final cands = (data['candidates'] as List?) ?? const [];
+    if (cands.isEmpty) return '';
+    final parts = (((cands.first as Map)['content'] as Map?)?['parts'] as List?) ?? const [];
+    final t = parts.map((p) => ((p as Map)['text'] ?? '').toString()).join().trim();
+    return t.replaceAll(RegExp(r'^["“]|["”]$'), '').trim();
+  }
+
   /// Looks at a screenshot and answers a question about it (what windows/buttons are there, what went wrong…).
   Future<String> vision(Uint8List jpeg, String question) async {
     await _pickModels();
