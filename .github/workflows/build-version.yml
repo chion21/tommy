@@ -1,0 +1,80 @@
+name: build-version
+# Rebuilds older versions (each in its own release "ver-<name>") so they can be compared, e.g. their voices.
+on:
+  workflow_dispatch:
+  push: { paths: [".github/workflows/build-version.yml"] }
+permissions: { contents: write }
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "v0.5", ref: "8a98402" }
+          - { name: "v0.6", ref: "36aa079" }
+          - { name: "v0.7", ref: "c131dd3" }
+    defaults: { run: { working-directory: app } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ matrix.ref }}" }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: flutter create --platforms=android,windows --org com.tommyai --project-name tommy .
+      - run: python3 tool/patch_platforms.py
+      - name: Smaller APK (same as the newest builds)
+        run: |
+          rm -f assets/characters/*_pc.webp
+          grep -q useLegacyPackaging android/app/build.gradle.kts || sed -i '0,/^android {/s//android {\n    packaging { jniLibs { useLegacyPackaging = true } }/' android/app/build.gradle.kts
+      - run: flutter pub get
+      - env: { TOMMY_KEYSTORE_PASSWORD: "${{ secrets.TOMMY_KEYSTORE_PASSWORD }}" }
+        run: |
+          if [ -n "$TOMMY_KEYSTORE_PASSWORD" ]; then export TOMMY_KEYSTORE="$PWD/android_signing/tommy-release.p12"; fi
+          flutter build apk --release --split-per-abi
+          mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "Tommy-${{ matrix.name }}.apk"
+      - uses: actions/upload-artifact@v4
+        with: { name: "apk-${{ matrix.name }}", path: "app/Tommy-${{ matrix.name }}.apk" }
+
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "v0.5", ref: "8a98402" }
+          - { name: "v0.6", ref: "36aa079" }
+          - { name: "v0.7", ref: "c131dd3" }
+    defaults: { run: { working-directory: app } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ matrix.ref }}" }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: flutter create --platforms=android,windows --org com.tommyai --project-name tommy .
+      - run: python tool/patch_platforms.py
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows_installer\tommy.iss
+          Move-Item build\installer\TommySetup.exe "TommySetup-${{ matrix.name }}.exe"
+      - uses: actions/upload-artifact@v4
+        with: { name: "exe-${{ matrix.name }}", path: "app/TommySetup-${{ matrix.name }}.exe" }
+
+  release:
+    needs: [android, windows]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          ls -la dist
+          for v in v0.5 v0.6 v0.7; do
+            files=$(ls dist/*-$v.* 2>/dev/null) || continue
+            gh release delete "ver-$v" -R "$GITHUB_REPOSITORY" -y --cleanup-tag || true
+            gh release create "ver-$v" -R "$GITHUB_REPOSITORY" --prerelease --title "Tommy $v (old version)" --notes "Rebuilt old version $v" $files
+          done
