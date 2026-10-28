@@ -11,9 +11,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: "v0.5", ref: "8a98402" }
-          - { name: "v0.6", ref: "36aa079" }
-          - { name: "v0.7", ref: "c131dd3" }
+          - { name: "v0.5", ref: "8a98402d9a9e65230e9f0e5b750fa8c32ad21ea5" }
+          - { name: "v0.6", ref: "36aa079f9d41f6dafdf15f3c3ee69b120622172c" }
+          - { name: "v0.7", ref: "c131dd31cc85df21da406566a8312a1214196888" }
     defaults: { run: { working-directory: app } }
     steps:
       - uses: actions/checkout@v4
@@ -43,9 +43,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: "v0.5", ref: "8a98402" }
-          - { name: "v0.6", ref: "36aa079" }
-          - { name: "v0.7", ref: "c131dd3" }
+          - { name: "v0.5", ref: "8a98402d9a9e65230e9f0e5b750fa8c32ad21ea5" }
+          - { name: "v0.6", ref: "36aa079f9d41f6dafdf15f3c3ee69b120622172c" }
+          - { name: "v0.7", ref: "c131dd31cc85df21da406566a8312a1214196888" }
     defaults: { run: { working-directory: app } }
     steps:
       - uses: actions/checkout@v4
